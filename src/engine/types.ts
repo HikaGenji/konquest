@@ -1,0 +1,112 @@
+import type { Rng } from './rng';
+
+export type PowerId =
+  | 'usa'
+  | 'china'
+  | 'russia'
+  | 'eu'
+  | 'india'
+  | 'brazil';
+
+export interface Power {
+  id: PowerId;
+  name: string;
+  /** Short label shown on the map. */
+  short: string;
+  color: string;
+  /** Territory id of this power's capital / starting region. */
+  capital: string;
+}
+
+export type EdgeType = 'land' | 'sea';
+
+export interface Territory {
+  id: string;
+  name: string;
+  continent: string;
+  /** Layout coordinates on a 1000 x 520 canvas (lon/lat-ish). */
+  x: number;
+  y: number;
+  /** Economic value: income per turn and contribution to score / victory. */
+  value: number;
+  coastal: boolean;
+}
+
+/** An undirected connection between two territories. */
+export interface Edge {
+  a: string;
+  b: string;
+  type: EdgeType;
+}
+
+export interface TerritoryState {
+  /** Owning power id, or null for an independent (neutral) territory. */
+  owner: PowerId | null;
+  armies: number;
+  navies: number;
+}
+
+export interface PlayerState {
+  power: PowerId;
+  treasury: number;
+  alive: boolean;
+}
+
+export type GameStatus = 'playing' | 'finished';
+
+export interface GameConfig {
+  /** Powers controlled by a human, in turn order. */
+  powers: PowerId[];
+  seed: number;
+  maxTurns: number;
+}
+
+export interface GameState {
+  status: GameStatus;
+  config: GameConfig;
+  turn: number;
+  currentPlayerIndex: number;
+  players: PlayerState[];
+  territories: Record<string, TerritoryState>;
+  rng: Rng;
+  log: LogEntry[];
+  winner: PowerId | null;
+}
+
+export interface LogEntry {
+  turn: number;
+  power: PowerId | null;
+  message: string;
+}
+
+// --- Actions -------------------------------------------------------------
+
+export interface BuildAction {
+  type: 'build';
+  territoryId: string;
+  armies: number;
+  navies: number;
+}
+
+export interface MoveAction {
+  type: 'move';
+  from: string;
+  to: string;
+  armies: number;
+  navies: number;
+}
+
+export interface EndTurnAction {
+  type: 'endTurn';
+}
+
+export type GameAction = BuildAction | MoveAction | EndTurnAction;
+
+export interface CombatResult {
+  attackerWins: boolean;
+  attArmiesLeft: number;
+  attNaviesLeft: number;
+  defArmiesLeft: number;
+  defNaviesLeft: number;
+  rounds: number;
+}
