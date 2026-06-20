@@ -71,6 +71,13 @@ export function GameScreen({ game, onAction, onQuit }: Props) {
       setStrikeMode(false);
       return;
     }
+    // Tapping the already-selected tile deselects it.
+    if (id === selectedId) {
+      setSelectedId(null);
+      setStrikeMode(false);
+      setBuild(ZERO);
+      return;
+    }
     if (selectedId && id !== selectedId && isOwn(selectedId) && validTargets.has(id)) {
       setPendingMove({ from: selectedId, to: id });
       return;
