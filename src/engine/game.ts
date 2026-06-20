@@ -1,4 +1,4 @@
-import { makeRng, nextFloat, rollHits } from './rng';
+import { makeRng, nextFloat, nextInt, rollHits } from './rng';
 import {
   ADJACENCY,
   edgeType,
@@ -7,14 +7,22 @@ import {
   TERRITORY_BY_ID,
   TOTAL_MAP_VALUE,
 } from './map';
-import { ageFor, MAX_TECH } from './tech';
+import {
+  ageFor,
+  canStrike,
+  hasGlobalStrike,
+  MAX_TECH,
+  STRIKE_TECH,
+} from './tech';
 import type {
   CombatResult,
   GameAction,
   GameConfig,
   GameState,
   LogEntry,
+  PlayerState,
   PowerId,
+  ResearchTrack,
   TerritoryState,
 } from './types';
 
@@ -40,6 +48,14 @@ export const RULES = {
   /** Cost to advance a research track from `level` to `level + 1`. */
   RESEARCH_BASE: 30,
   RESEARCH_STEP: 25,
+  /** Extra income fraction per Industry level above 1. */
+  INCOME_PER_INDUSTRY: 0.15,
+  /** Cost in treasury to launch one missile strike. */
+  STRIKE_COST: 15,
+  /** Base armies destroyed by a strike (before tech/variance). */
+  STRIKE_BASE_DMG: 2,
+  /** Bonus damage when striking with global (Orbital) range. */
+  STRIKE_GLOBAL_BONUS: 2,
   STARTING_TREASURY: 60,
   CAPITAL_ARMIES: 12,
   CAPITAL_NAVIES: 4,
@@ -110,6 +126,16 @@ export function ownedValue(state: GameState, power: PowerId): number {
   );
 }
 
+/** Income multiplier from a power's Industry tech. */
+export function incomeMultiplier(industry: number): number {
+  return 1 + (industry - 1) * RULES.INCOME_PER_INDUSTRY;
+}
+
+/** Money a player will collect at the start of their turn. */
+export function incomeFor(state: GameState, player: PlayerState): number {
+  return Math.floor(ownedValue(state, player.power) * incomeMultiplier(player.industry));
+}
+
 export function currentPlayer(state: GameState) {
   return state.players[state.currentPlayerIndex];
 }
@@ -142,6 +168,7 @@ export function createGame(config: GameConfig): GameState {
       alive: true,
       offense: 1,
       defense: 1,
+      industry: 1,
     })),
     territories,
     rng: makeRng(config.seed),
@@ -167,7 +194,7 @@ export function createGame(config: GameConfig): GameState {
 function collectIncome(state: GameState): void {
   const player = currentPlayer(state);
   if (!player.alive) return;
-  const income = ownedValue(state, player.power);
+  const income = incomeFor(state, player);
   player.treasury += income;
   log(
     state,
@@ -300,13 +327,47 @@ export function validate(state: GameState, action: GameAction): Validation {
   }
 
   if (action.type === 'research') {
-    const level = action.track === 'offense' ? player.offense : player.defense;
+    const level = trackLevel(player, action.track);
     if (level >= MAX_TECH) return err('Already at the highest age for that track.');
     if (researchCost(level) > player.treasury) return err('Not enough money to research.');
     return ok;
   }
 
+  if (action.type === 'strike') {
+    const from = state.territories[action.from];
+    const to = state.territories[action.to];
+    if (!from || !to) return err('Unknown territory.');
+    if (from.owner !== player.power) return err('You can only strike from your own territory.');
+    if (!canStrike(player.offense)) return err('Missile strikes need Weapons level 4 (Drone Age).');
+    if (to.owner === player.power) return err('You cannot strike your own territory.');
+    if (to.armies <= 0) return err('No forces there to strike.');
+    if (!strikeTargets(state, action.from, player.offense).has(action.to)) {
+      return err('That target is out of range.');
+    }
+    if (RULES.STRIKE_COST > player.treasury) return err('Not enough money to strike.');
+    return ok;
+  }
+
   return ok; // endTurn
+}
+
+/** Enemy/neutral territories a power can hit from `from`, given its weapons. */
+export function strikeTargets(
+  state: GameState,
+  from: string,
+  offense: number,
+): Set<string> {
+  if (!canStrike(offense)) return new Set();
+  const owner = state.territories[from].owner;
+  const inRange = hasGlobalStrike(offense)
+    ? Object.keys(state.territories)
+    : Object.keys(neighbors(from));
+  return new Set(
+    inRange.filter((id) => {
+      const t = state.territories[id];
+      return id !== from && t.owner !== owner && t.armies > 0;
+    }),
+  );
 }
 
 // --- Reducer -------------------------------------------------------------
@@ -331,6 +392,9 @@ export function apply(state: GameState, action: GameAction): GameState {
     case 'research':
       applyResearch(next, action);
       break;
+    case 'strike':
+      applyStrike(next, action);
+      break;
     case 'endTurn':
       applyEndTurn(next);
       break;
@@ -338,23 +402,65 @@ export function apply(state: GameState, action: GameAction): GameState {
   return next;
 }
 
+function applyStrike(
+  state: GameState,
+  action: Extract<GameAction, { type: 'strike' }>,
+): void {
+  const player = currentPlayer(state);
+  const to = state.territories[action.to];
+  player.treasury -= RULES.STRIKE_COST;
+
+  // Damage scales with weapons tech, with some variance; global strikes hit harder.
+  const global = hasGlobalStrike(player.offense);
+  const base = RULES.STRIKE_BASE_DMG + (global ? RULES.STRIKE_GLOBAL_BONUS : 0);
+  const damage = base + nextInt(state.rng, 0, player.offense);
+  const killed = Math.min(damage, to.armies);
+  to.armies -= killed;
+
+  const weapon = global ? 'orbital strike' : 'missile strike';
+  log(
+    state,
+    player.power,
+    `${POWER_BY_ID[player.power].name} launched a ${weapon} on ${TERRITORY_BY_ID[action.to].name}, ` +
+      `destroying ${killed} ${killed === 1 ? 'army' : 'armies'} (–$${RULES.STRIKE_COST}).`,
+  );
+}
+
+const TRACK_LABEL: Record<string, string> = {
+  offense: 'weapons',
+  defense: 'defenses',
+  industry: 'industry',
+};
+
+function trackLevel(player: PlayerState, track: ResearchTrack): number {
+  return track === 'offense'
+    ? player.offense
+    : track === 'defense'
+      ? player.defense
+      : player.industry;
+}
+
 function applyResearch(
   state: GameState,
   action: Extract<GameAction, { type: 'research' }>,
 ): void {
   const player = currentPlayer(state);
-  const level = action.track === 'offense' ? player.offense : player.defense;
+  const level = trackLevel(player, action.track);
   const cost = researchCost(level);
   player.treasury -= cost;
   if (action.track === 'offense') player.offense += 1;
-  else player.defense += 1;
-  const age = ageFor(player.offense, player.defense);
-  const what = action.track === 'offense' ? 'weapons' : 'defenses';
+  else if (action.track === 'defense') player.defense += 1;
+  else player.industry += 1;
+  const age = ageFor(player.offense, player.defense, player.industry);
+  const extra =
+    action.track === 'offense' && level + 1 === STRIKE_TECH
+      ? ' — missile strikes unlocked!'
+      : '';
   log(
     state,
     player.power,
-    `${POWER_BY_ID[player.power].name} advanced ${what} to level ${level + 1} ` +
-      `(${age.icon} ${age.name} Age, –$${cost}).`,
+    `${POWER_BY_ID[player.power].name} advanced ${TRACK_LABEL[action.track]} to level ${level + 1} ` +
+      `(${age.icon} ${age.name} Age, –$${cost})${extra}.`,
   );
 }
 

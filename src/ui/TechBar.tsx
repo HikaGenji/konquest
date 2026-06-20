@@ -1,9 +1,15 @@
 import { AGES, ageIndex, MAX_TECH } from '../engine';
 import type { PlayerState } from '../engine';
 
-/** Graphical six-age progression with offense/defense track meters. */
+/** Graphical six-age progression with offense/defense/industry track meters. */
 export function TechBar({ player }: { player: PlayerState }) {
-  const idx = ageIndex(player.offense, player.defense);
+  const idx = ageIndex(player.offense, player.defense, player.industry);
+
+  const tracks: { label: string; level: number; color: string }[] = [
+    { label: '⚔️ Weapons', level: player.offense, color: '#f87171' },
+    { label: '🛡️ Defenses', level: player.defense, color: '#60a5fa' },
+    { label: '🏭 Industry', level: player.industry, color: '#34d399' },
+  ];
 
   return (
     <div className="techbar">
@@ -21,20 +27,15 @@ export function TechBar({ player }: { player: PlayerState }) {
         ))}
       </div>
       <div className="tech-tracks">
-        <div className="track">
-          <span className="tk">⚔️ Weapons</span>
-          <div className="bar">
-            <i style={{ width: `${(player.offense / MAX_TECH) * 100}%`, background: '#f87171' }} />
+        {tracks.map((t) => (
+          <div className="track" key={t.label}>
+            <span className="tk">{t.label}</span>
+            <div className="bar">
+              <i style={{ width: `${(t.level / MAX_TECH) * 100}%`, background: t.color }} />
+            </div>
+            <b>L{t.level}</b>
           </div>
-          <b>L{player.offense}</b>
-        </div>
-        <div className="track">
-          <span className="tk">🛡️ Defenses</span>
-          <div className="bar">
-            <i style={{ width: `${(player.defense / MAX_TECH) * 100}%`, background: '#60a5fa' }} />
-          </div>
-          <b>L{player.defense}</b>
-        </div>
+        ))}
       </div>
     </div>
   );

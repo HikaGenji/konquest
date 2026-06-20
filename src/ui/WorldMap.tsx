@@ -18,6 +18,7 @@ interface Props {
   game: GameState;
   selectedId: string | null;
   validTargets: Set<string>;
+  strikeTargets: Set<string>;
   onTap: (id: string) => void;
 }
 
@@ -30,7 +31,7 @@ function fillFor(game: GameState, id: string): string {
   return owner ? POWER_BY_ID[owner].color : '#5b6b82';
 }
 
-export function WorldMap({ game, selectedId, validTargets, onTap }: Props) {
+export function WorldMap({ game, selectedId, validTargets, strikeTargets, onTap }: Props) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [view, setView] = useState({ cx: MAP_W / 2, cy: MAP_H / 2, z: 1 });
 
@@ -169,6 +170,7 @@ export function WorldMap({ game, selectedId, validTargets, onTap }: Props) {
             const r = nodeRadius(t.value);
             const isSelected = selectedId === t.id;
             const isTarget = validTargets.has(t.id);
+            const isStrike = strikeTargets.has(t.id);
             return (
               <g
                 key={t.id}
@@ -177,6 +179,12 @@ export function WorldMap({ game, selectedId, validTargets, onTap }: Props) {
               >
                 {isTarget && (
                   <circle cx={t.x} cy={t.y} r={r + 4} fill="none" stroke="#38bdf8" strokeWidth={1.6} strokeDasharray="3 2" />
+                )}
+                {isStrike && (
+                  <>
+                    <circle cx={t.x} cy={t.y} r={r + 5} fill="none" stroke="#fb7185" strokeWidth={1.8} strokeDasharray="2 2" />
+                    <text className="terr-count" x={t.x} y={t.y - r - 6} style={{ fontSize: 11 }}>⊕</text>
+                  </>
                 )}
                 {isSelected && (
                   <circle cx={t.x} cy={t.y} r={r + 4} fill="none" stroke="#fff" strokeWidth={1.8} />

@@ -23,12 +23,27 @@ export const AGES: Age[] = [
 export const MIN_TECH = 1;
 export const MAX_TECH = AGES.length; // 6
 
+/** Weapons level that unlocks adjacent missile strikes (Drone age). */
+export const STRIKE_TECH = 4;
+/** Weapons level that upgrades strikes to global range (Orbital age). */
+export const STRIKE_GLOBAL_TECH = 6;
+
 /** Which Age (index into AGES) a power with these tech levels sits in. */
-export function ageIndex(offense: number, defense: number): number {
-  const i = Math.round((offense + defense) / 2) - 1;
+export function ageIndex(offense: number, defense: number, industry: number): number {
+  const i = Math.round((offense + defense + industry) / 3) - 1;
   return Math.max(0, Math.min(AGES.length - 1, i));
 }
 
-export function ageFor(offense: number, defense: number): Age {
-  return AGES[ageIndex(offense, defense)];
+export function ageFor(offense: number, defense: number, industry: number): Age {
+  return AGES[ageIndex(offense, defense, industry)];
+}
+
+/** Can a power with this weapons level launch missile strikes at all? */
+export function canStrike(offense: number): boolean {
+  return offense >= STRIKE_TECH;
+}
+
+/** Do this power's strikes reach anywhere on the map (vs only adjacent)? */
+export function hasGlobalStrike(offense: number): boolean {
+  return offense >= STRIKE_GLOBAL_TECH;
 }

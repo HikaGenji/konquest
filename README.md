@@ -41,12 +41,16 @@ npm run typecheck  # type-check only
    lost at sea.
 5. Combat is resolved round by round; defenders have a slight edge, and neutral garrisons are
    weaker. Take a region's last defender to capture it.
-6. **Research** (Megalomania-style): instead of spending everything on troops, invest in two tech
-   tracks — **⚔️ Weapons** (offense) and **🛡️ Defenses** — that climb through six visual **Ages**
-   (Conventional → Mechanized → Precision → Drone → Cyber-AI → Orbital). Your tech raises your hit
-   chances and lowers the enemy's, so the constant tension is: *strike now with what you have, or
-   advance an age and fight from a position of strength.* Each level costs more than the last.
-7. Press **End turn** to pass the device to the next player.
+6. **Research** (Megalomania-style): instead of spending everything on troops, invest in three tech
+   tracks — **⚔️ Weapons** (offense), **🛡️ Defenses**, and **🏭 Industry** (income multiplier) — that
+   climb through six visual **Ages** (Conventional → Mechanized → Precision → Drone → Cyber-AI →
+   Orbital). Weapons/Defenses shift combat odds in your favor; Industry compounds your economy. The
+   constant tension: *strike now with what you have, or advance an age and fight from strength.*
+7. **Missile strikes** 🚀: reach **Weapons L4 (Drone Age)** to bombard an *adjacent* enemy/neutral
+   region — destroying troops without occupying, to soften it for a follow-up invasion. At **Weapons
+   L6 (Orbital Age)** strikes go **global** and hit harder. Select one of your regions, tap **Strike**,
+   then tap a highlighted ⊕ target.
+8. Press **End turn** to pass the device to the next player.
 
 ## Architecture
 
@@ -81,7 +85,8 @@ The stack was chosen to grow into full online play without rewrites:
 - [x] Deterministic game engine + tests
 - [x] Mobile-friendly hotseat UI with interactive world map
 - [x] Real projected world map (continents from `world-atlas`)
-- [x] Megalomania-style tech progression through six Ages (offense/defense tracks)
+- [x] Megalomania-style tech tree: three tracks (weapons/defenses/industry), six Ages, and
+      age-gated missile/orbital strikes
 - [ ] **Online multiplayer** — wire the React client to the WebSocket server in `server/`
       (rooms already broadcast authoritative state and enforce turn order)
 - [ ] Lobby: choose powers, ready-up, reconnect

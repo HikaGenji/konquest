@@ -54,7 +54,11 @@ export interface PlayerState {
   offense: number;
   /** Defenses tech (defense), 1..MAX_TECH. */
   defense: number;
+  /** Industry tech (economy / income multiplier), 1..MAX_TECH. */
+  industry: number;
 }
+
+export type ResearchTrack = 'offense' | 'defense' | 'industry';
 
 export type GameStatus = 'playing' | 'finished';
 
@@ -102,14 +106,26 @@ export interface MoveAction {
 
 export interface ResearchAction {
   type: 'research';
-  track: 'offense' | 'defense';
+  track: ResearchTrack;
+}
+
+/** Ranged bombardment unlocked by Weapons tech — damages but never captures. */
+export interface StrikeAction {
+  type: 'strike';
+  from: string;
+  to: string;
 }
 
 export interface EndTurnAction {
   type: 'endTurn';
 }
 
-export type GameAction = BuildAction | MoveAction | ResearchAction | EndTurnAction;
+export type GameAction =
+  | BuildAction
+  | MoveAction
+  | ResearchAction
+  | StrikeAction
+  | EndTurnAction;
 
 export interface CombatResult {
   attackerWins: boolean;

@@ -23,7 +23,7 @@ export function FinishedScreen({ game, onRestart }: Props) {
           const power = POWER_BY_ID[p.power];
           const val = ownedValue(game, p.power);
           const pct = Math.round((val / TOTAL_MAP_VALUE) * 100);
-          const age = ageFor(p.offense, p.defense);
+          const age = ageFor(p.offense, p.defense, p.industry);
           return (
             <div className="row-s" key={p.power}>
               <span className="power-dot" style={{ background: power.color }} />

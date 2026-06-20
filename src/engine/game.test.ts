@@ -9,12 +9,16 @@ import {
   currentPlayer,
   defenderHit,
   EDGES,
+  incomeFor,
+  incomeMultiplier,
   MAX_TECH,
   ownedTerritories,
   ownedValue,
   POWER_BY_ID,
   researchCost,
   RULES,
+  STRIKE_TECH,
+  strikeTargets,
   TERRITORIES,
   TERRITORY_BY_ID,
   validate,
@@ -191,7 +195,8 @@ describe('technology', () => {
     const g = newGame();
     expect(g.players[0].offense).toBe(1);
     expect(g.players[0].defense).toBe(1);
-    expect(ageIndex(1, 1)).toBe(0);
+    expect(g.players[0].industry).toBe(1);
+    expect(ageIndex(1, 1, 1)).toBe(0);
   });
 
   it('researching raises the track and deducts the scaling cost', () => {
@@ -217,10 +222,10 @@ describe('technology', () => {
     expect(v.ok).toBe(false);
   });
 
-  it('advancing both tracks climbs through the ages', () => {
-    const top = ageIndex(MAX_TECH, MAX_TECH);
+  it('advancing all tracks climbs through the ages', () => {
+    const top = ageIndex(MAX_TECH, MAX_TECH, MAX_TECH);
     expect(top).toBe(AGES.length - 1);
-    expect(ageIndex(1, 1)).toBeLessThan(top);
+    expect(ageIndex(1, 1, 1)).toBeLessThan(top);
   });
 
   it('higher offense and defense improve hit chances monotonically', () => {
@@ -241,6 +246,56 @@ describe('technology', () => {
       if (r.territories['mexico'].owner === 'usa') attackerWins++;
     }
     expect(attackerWins).toBeGreaterThan(trials * 0.7);
+  });
+});
+
+describe('industry & income', () => {
+  it('industry multiplies income', () => {
+    expect(incomeMultiplier(1)).toBe(1);
+    expect(incomeMultiplier(3)).toBeCloseTo(1 + 2 * RULES.INCOME_PER_INDUSTRY);
+  });
+
+  it('a higher-industry power collects more than a base power on the same land', () => {
+    const g = newGame();
+    const base = incomeFor(g, g.players[0]);
+    const boosted = { ...g.players[0], industry: 4 };
+    expect(incomeFor(g, boosted)).toBeGreaterThan(base);
+  });
+
+  it('researching industry raises the track', () => {
+    const g = newGame();
+    const next = apply(g, { type: 'research', track: 'industry' });
+    expect(next.players[0].industry).toBe(2);
+  });
+});
+
+describe('missile strikes', () => {
+  it('are locked until the Drone age (Weapons L4)', () => {
+    const g = newGame();
+    expect(strikeTargets(g, 'usa_terr', 1).size).toBe(0);
+    const v = validate(g, { type: 'strike', from: 'usa_terr', to: 'mexico' });
+    expect(v.ok).toBe(false);
+  });
+
+  it('hit an adjacent enemy/neutral and destroy armies without capturing', () => {
+    let g = newGame();
+    g.players[0].offense = STRIKE_TECH;
+    g.players[0].treasury = 100;
+    g.territories['mexico'] = { owner: null, armies: 8, navies: 0 };
+    const before = g.territories['mexico'].armies;
+    const next = apply(g, { type: 'strike', from: 'usa_terr', to: 'mexico' });
+    expect(next.territories['mexico'].owner).toBeNull(); // never captures
+    expect(next.territories['mexico'].armies).toBeLessThan(before);
+    expect(next.players[0].treasury).toBe(100 - RULES.STRIKE_COST);
+  });
+
+  it('only reach adjacent territories until global (Orbital) range', () => {
+    const g = newGame();
+    // china_terr is not adjacent to usa_terr.
+    const adjacent = strikeTargets(g, 'usa_terr', STRIKE_TECH);
+    expect(adjacent.has('china_terr')).toBe(false);
+    const global = strikeTargets(g, 'usa_terr', MAX_TECH);
+    expect(global.has('china_terr')).toBe(true);
   });
 });
 

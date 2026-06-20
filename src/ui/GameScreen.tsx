@@ -2,6 +2,9 @@ import { useMemo, useState } from 'react';
 import {
   ageFor,
   apply,
+  canStrike,
+  hasGlobalStrike,
+  incomeFor,
   MAX_TECH,
   neighbors,
   ownedTerritories,
@@ -9,6 +12,7 @@ import {
   POWER_BY_ID,
   researchCost,
   RULES,
+  strikeTargets,
   TERRITORY_BY_ID,
   TOTAL_MAP_VALUE,
 } from '../engine';
@@ -28,16 +32,24 @@ export function GameScreen({ game, setGame, onQuit }: Props) {
   const [pendingMove, setPendingMove] = useState<{ from: string; to: string } | null>(null);
   const [buildArmies, setBuildArmies] = useState(0);
   const [buildNavies, setBuildNavies] = useState(0);
+  const [strikeMode, setStrikeMode] = useState(false);
 
   const player = game.players[game.currentPlayerIndex];
   const power = POWER_BY_ID[player.power];
   const isOwn = (id: string | null) => !!id && game.territories[id].owner === player.power;
 
   const validTargets = useMemo(() => {
+    if (strikeMode && isOwn(selectedId)) return new Set<string>();
     if (!isOwn(selectedId)) return new Set<string>();
     return new Set(Object.keys(neighbors(selectedId!)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, game]);
+  }, [selectedId, game, strikeMode]);
+
+  const strikeOptions = useMemo(() => {
+    if (!strikeMode || !isOwn(selectedId)) return new Set<string>();
+    return strikeTargets(game, selectedId!, player.offense);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, game, strikeMode]);
 
   function resetSelectionBuild() {
     setBuildArmies(0);
@@ -45,10 +57,16 @@ export function GameScreen({ game, setGame, onQuit }: Props) {
   }
 
   function handleTap(id: string) {
+    if (strikeMode && selectedId && strikeOptions.has(id)) {
+      setGame(apply(game, { type: 'strike', from: selectedId, to: id }));
+      setStrikeMode(false);
+      return;
+    }
     if (selectedId && id !== selectedId && isOwn(selectedId) && validTargets.has(id)) {
       setPendingMove({ from: selectedId, to: id });
       return;
     }
+    setStrikeMode(false);
     setSelectedId(id);
     resetSelectionBuild();
   }
@@ -69,10 +87,11 @@ export function GameScreen({ game, setGame, onQuit }: Props) {
   function endTurn() {
     setGame(apply(game, { type: 'endTurn' }));
     setSelectedId(null);
+    setStrikeMode(false);
     resetSelectionBuild();
   }
 
-  function doResearch(track: 'offense' | 'defense') {
+  function doResearch(track: 'offense' | 'defense' | 'industry') {
     setGame(apply(game, { type: 'research', track }));
   }
 
@@ -81,9 +100,11 @@ export function GameScreen({ game, setGame, onQuit }: Props) {
   const sharePct = Math.round((ownedValue(game, player.power) / TOTAL_MAP_VALUE) * 100);
   const buildCost = buildArmies * RULES.ARMY_COST + buildNavies * RULES.NAVY_COST;
   const recent = game.log.slice(-6).reverse();
-  const age = ageFor(player.offense, player.defense);
+  const age = ageFor(player.offense, player.defense, player.industry);
   const offCost = researchCost(player.offense);
   const defCost = researchCost(player.defense);
+  const indCost = researchCost(player.industry);
+  const projectedIncome = incomeFor(game, player);
 
   return (
     <div className="game">
@@ -111,7 +132,13 @@ export function GameScreen({ game, setGame, onQuit }: Props) {
         <button className="primary" onClick={endTurn}>End turn</button>
       </div>
 
-      <WorldMap game={game} selectedId={selectedId} validTargets={validTargets} onTap={handleTap} />
+      <WorldMap
+        game={game}
+        selectedId={selectedId}
+        validTargets={validTargets}
+        strikeTargets={strikeOptions}
+        onTap={handleTap}
+      />
 
       <div className="panel">
         <div className="research">
@@ -121,17 +148,26 @@ export function GameScreen({ game, setGame, onQuit }: Props) {
               disabled={player.offense >= MAX_TECH || offCost > player.treasury}
               onClick={() => doResearch('offense')}
             >
-              ⚔️ {player.offense >= MAX_TECH ? 'Weapons maxed' : `Advance weapons → L${player.offense + 1} ($${offCost})`}
+              ⚔️ {player.offense >= MAX_TECH ? 'Weapons maxed' : `Weapons → L${player.offense + 1} ($${offCost})`}
             </button>
             <button
               disabled={player.defense >= MAX_TECH || defCost > player.treasury}
               onClick={() => doResearch('defense')}
             >
-              🛡️ {player.defense >= MAX_TECH ? 'Defenses maxed' : `Advance defenses → L${player.defense + 1} ($${defCost})`}
+              🛡️ {player.defense >= MAX_TECH ? 'Defenses maxed' : `Defenses → L${player.defense + 1} ($${defCost})`}
+            </button>
+            <button
+              disabled={player.industry >= MAX_TECH || indCost > player.treasury}
+              onClick={() => doResearch('industry')}
+            >
+              🏭 {player.industry >= MAX_TECH ? 'Industry maxed' : `Industry → L${player.industry + 1} ($${indCost})`}
             </button>
           </div>
           <p className="hint">
-            Spend now to outclass rivals in battle — or attack while you still hold the edge.
+            Income now <b>${projectedIncome}/turn</b>.{' '}
+            {canStrike(player.offense)
+              ? `🚀 ${hasGlobalStrike(player.offense) ? 'Orbital strikes hit anywhere' : 'Missile strikes hit adjacent regions'} — select a region and tap "Strike".`
+              : `Reach Weapons L${4} (Drone Age) to unlock 🚀 missile strikes.`}
           </p>
         </div>
 
@@ -160,7 +196,7 @@ export function GameScreen({ game, setGame, onQuit }: Props) {
               {sel.owner ? POWER_BY_ID[sel.owner].name : 'Neutral'}
               {(() => {
                 const op = sel.owner ? game.players.find((p) => p.power === sel.owner) : undefined;
-                return op ? ` · ${ageFor(op.offense, op.defense).unit}` : '';
+                return op ? ` · ${ageFor(op.offense, op.defense, op.industry).unit}` : '';
               })()}
               {selTerr.coastal ? ' · coastal' : ' · landlocked'}
             </p>
@@ -203,9 +239,21 @@ export function GameScreen({ game, setGame, onQuit }: Props) {
                   >
                     Build — ${buildCost}
                   </button>
-                  {buildCost > player.treasury && <span className="hint">Not enough money</span>}
-                  <span className="hint">Tap a highlighted neighbor to move / attack.</span>
+                  {canStrike(player.offense) && (
+                    <button
+                      className={strikeMode ? 'primary' : ''}
+                      disabled={!strikeMode && (player.treasury < RULES.STRIKE_COST || strikeTargets(game, selectedId!, player.offense).size === 0)}
+                      onClick={() => setStrikeMode((s) => !s)}
+                    >
+                      {strikeMode ? '✖ Cancel strike' : `🚀 Strike ($${RULES.STRIKE_COST})`}
+                    </button>
+                  )}
                 </div>
+                <span className="hint">
+                  {strikeMode
+                    ? 'Tap a highlighted ⊕ target to bombard it.'
+                    : 'Tap a highlighted neighbor to move / attack.'}
+                </span>
               </>
             ) : (
               <p className="hint">
