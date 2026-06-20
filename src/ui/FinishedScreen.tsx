@@ -1,4 +1,4 @@
-import { ageFor, FACTION_BY_ID, ownedTiles, ownedValue, totalValue } from '../engine';
+import { ageFor, FACTION_BY_ID, HERO_BY_ID, ownedTiles, ownedValue, totalValue } from '../engine';
 import type { GameState } from '../engine';
 
 interface Props {
@@ -22,13 +22,14 @@ export function FinishedScreen({ game, onRestart }: Props) {
       <div className="scoreboard">
         {ranked.map((p) => {
           const f = FACTION_BY_ID[p.faction];
+          const h = HERO_BY_ID[p.hero];
           const pct = Math.round((ownedValue(game, p.faction) / total) * 100);
           const age = ageFor(p.offense, p.defense, p.industry);
           return (
             <div className="row-s" key={p.faction}>
               <span className="power-dot" style={{ background: f.color }} />
               <span className="grow">
-                {f.name} {!p.alive && '☠️'}
+                {h.emoji} {f.name} <span className="hint">· {h.name}</span> {!p.alive && '☠️'}
               </span>
               <span className="hint" title={`${age.name} Age`}>{age.icon}</span>
               <span className="hint">{ownedTiles(game, p.faction).length} tiles</span>

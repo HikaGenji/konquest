@@ -2,22 +2,27 @@ import { useMemo, useState } from 'react';
 import {
   ageFor,
   apply,
-  canStrike,
+  buildCostFor,
+  canPlayerStrike,
+  effectiveStrikeTech,
   FACTION_BY_ID,
   hasGlobalStrike,
+  HERO_BY_ID,
   incomeFor,
   MAX_TECH,
   neighborsOf,
   ownedTiles,
   ownedValue,
-  researchCost,
+  researchCostFor,
   revealedTo,
-  RULES,
+  spyCostFor,
+  strikeCostFor,
   strikeTargets,
   TERRAIN,
   tileById,
   totalValue,
   UNIT,
+  unitCostFor,
   unitsForTerrain,
 } from '../engine';
 import type { GameState, UnitType } from '../engine';
@@ -43,6 +48,7 @@ export function GameScreen({ game, setGame, onEndTurn, onQuit }: Props) {
 
   const player = game.players[game.currentPlayerIndex];
   const faction = FACTION_BY_ID[player.faction];
+  const hero = HERO_BY_ID[player.hero];
   const isOwn = (id: string | null) => !!id && game.tiles[id].owner === player.faction;
 
   const validTargets = useMemo(() => {
@@ -53,7 +59,7 @@ export function GameScreen({ game, setGame, onEndTurn, onQuit }: Props) {
 
   const strikeOptions = useMemo(() => {
     if (!strikeMode || !isOwn(selectedId)) return new Set<string>();
-    return strikeTargets(game, selectedId!, player.offense);
+    return strikeTargets(game, selectedId!, player);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, game, strikeMode]);
 
@@ -99,13 +105,15 @@ export function GameScreen({ game, setGame, onEndTurn, onQuit }: Props) {
 
   const sharePct = Math.round((ownedValue(game, player.faction) / totalValue(game)) * 100);
   const age = ageFor(player.offense, player.defense, player.industry);
-  const offCost = researchCost(player.offense);
-  const defCost = researchCost(player.defense);
-  const indCost = researchCost(player.industry);
+  const offCost = researchCostFor(player, player.offense);
+  const defCost = researchCostFor(player, player.defense);
+  const indCost = researchCostFor(player, player.industry);
   const projectedIncome = incomeFor(game, player);
+  const spyCost = spyCostFor(player);
+  const strikeCost = strikeCostFor(player);
 
   const buildUnits: UnitType[] = selTile ? unitsForTerrain(selTile.type) : [];
-  const buildCost = build.army * UNIT.army.cost + build.navy * UNIT.navy.cost + build.air * UNIT.air.cost;
+  const buildCost = buildCostFor(player, build);
 
   const recentVisible = game.log
     .filter((e) => e.faction === player.faction || e.faction === null)
@@ -119,6 +127,9 @@ export function GameScreen({ game, setGame, onEndTurn, onQuit }: Props) {
           <span className="power-dot" style={{ background: faction.color }} />
           {faction.name}
         </div>
+        <span className="age-chip" style={{ borderColor: faction.color, color: faction.color }} title={hero.blurb}>
+          {hero.emoji} {hero.name}
+        </span>
         <span className="age-chip" style={{ borderColor: age.color, color: age.color }}>
           {age.icon} {age.name}
         </span>
@@ -163,9 +174,9 @@ export function GameScreen({ game, setGame, onEndTurn, onQuit }: Props) {
           </div>
           <p className="hint">
             Income <b>${projectedIncome}/turn</b>.{' '}
-            {canStrike(player.offense)
+            {canPlayerStrike(player)
               ? `🚀 ${hasGlobalStrike(player.offense) ? 'Orbital strikes hit anywhere' : 'Missile strikes hit adjacent tiles'}.`
-              : 'Reach Weapons L4 (Drone Age) for 🚀 strikes.'}
+              : `Reach Weapons L${effectiveStrikeTech(player)} for 🚀 strikes.`}
           </p>
         </div>
 
@@ -200,8 +211,8 @@ export function GameScreen({ game, setGame, onEndTurn, onQuit }: Props) {
             ) : (
               <div className="build-row">
                 <span>🕵️ Forces hidden — intel required</span>
-                <button disabled={player.treasury < RULES.SPY_COST} onClick={() => doSpy(selectedId!)}>
-                  Spy (${RULES.SPY_COST})
+                <button disabled={player.treasury < spyCost} onClick={() => doSpy(selectedId!)}>
+                  Spy (${spyCost})
                 </button>
               </div>
             )}
@@ -211,7 +222,7 @@ export function GameScreen({ game, setGame, onEndTurn, onQuit }: Props) {
                 {buildUnits.map((u) => (
                   <div className="build-row" key={u}>
                     <span>
-                      {UNIT[u].glyph} {UNIT[u].label} <span className="hint">(${UNIT[u].cost})</span>
+                      {UNIT[u].glyph} {UNIT[u].label} <span className="hint">(${unitCostFor(player, u)})</span>
                     </span>
                     <div className="stepper">
                       <button onClick={() => setBuild((b) => ({ ...b, [u]: Math.max(0, b[u] - 1) }))}>−</button>
@@ -224,13 +235,13 @@ export function GameScreen({ game, setGame, onEndTurn, onQuit }: Props) {
                   <button className="primary" disabled={buildCost === 0 || buildCost > player.treasury} onClick={doBuild}>
                     Build — ${buildCost}
                   </button>
-                  {canStrike(player.offense) && (
+                  {canPlayerStrike(player) && (
                     <button
                       className={strikeMode ? 'primary' : ''}
-                      disabled={!strikeMode && (player.treasury < RULES.STRIKE_COST || strikeTargets(game, selectedId!, player.offense).size === 0)}
+                      disabled={!strikeMode && (player.treasury < strikeCost || strikeTargets(game, selectedId!, player).size === 0)}
                       onClick={() => setStrikeMode((s) => !s)}
                     >
-                      {strikeMode ? '✖ Cancel strike' : `🚀 Strike ($${RULES.STRIKE_COST})`}
+                      {strikeMode ? '✖ Cancel strike' : `🚀 Strike ($${strikeCost})`}
                     </button>
                   )}
                 </div>

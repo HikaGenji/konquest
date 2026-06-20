@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { apply, createGame } from './engine';
-import type { FactionId, GameState } from './engine';
+import type { FactionId, GameState, HeroId } from './engine';
 import { SetupScreen } from './ui/SetupScreen';
 import { GameScreen } from './ui/GameScreen';
 import { FinishedScreen } from './ui/FinishedScreen';
@@ -12,8 +12,14 @@ export function App() {
   // this keeps each player's fog-of-war view private on a shared device.
   const [awaitingHandoff, setAwaitingHandoff] = useState(false);
 
-  function start(factions: FactionId[], seed: number, maxTurns: number, radius: number) {
-    setGame(createGame({ factions, seed, maxTurns, radius }));
+  function start(
+    factions: FactionId[],
+    heroes: HeroId[],
+    seed: number,
+    maxTurns: number,
+    radius: number,
+  ) {
+    setGame(createGame({ factions, heroes, seed, maxTurns, radius }));
     setAwaitingHandoff(true);
   }
 

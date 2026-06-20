@@ -8,11 +8,12 @@ import {
 } from './map';
 import {
   ageFor,
-  canStrike,
   hasGlobalStrike,
   MAX_TECH,
   STRIKE_TECH,
 } from './tech';
+import { HERO_BY_ID } from './heroes';
+import type { HeroMods } from './heroes';
 import type {
   CombatResult,
   FactionId,
@@ -55,6 +56,40 @@ export function unitCost(unit: UnitType): number {
 
 export function researchCost(level: number): number {
   return RULES.RESEARCH_BASE + RULES.RESEARCH_STEP * (level - 1);
+}
+
+// --- Hero modifiers ------------------------------------------------------
+
+export function heroMods(player: PlayerState): HeroMods {
+  return HERO_BY_ID[player.hero].mods;
+}
+export function effectiveStrikeTech(player: PlayerState): number {
+  return STRIKE_TECH - heroMods(player).strikeTechReduction;
+}
+export function canPlayerStrike(player: PlayerState): boolean {
+  return player.offense >= effectiveStrikeTech(player);
+}
+export function unitCostFor(player: PlayerState, unit: UnitType): number {
+  return Math.max(1, Math.round(UNIT[unit].cost * (1 - heroMods(player).unitDiscount[unit])));
+}
+export function buildCostFor(
+  player: PlayerState,
+  counts: { army: number; navy: number; air: number },
+): number {
+  return (
+    counts.army * unitCostFor(player, 'army') +
+    counts.navy * unitCostFor(player, 'navy') +
+    counts.air * unitCostFor(player, 'air')
+  );
+}
+export function researchCostFor(player: PlayerState, level: number): number {
+  return Math.floor(researchCost(level) * (1 - heroMods(player).researchDiscount));
+}
+export function spyCostFor(player: PlayerState): number {
+  return Math.floor(RULES.SPY_COST * (1 - heroMods(player).spyDiscount));
+}
+export function strikeCostFor(player: PlayerState): number {
+  return Math.floor(RULES.STRIKE_COST * heroMods(player).strikeCostMult);
 }
 
 function clampHit(x: number): number {
@@ -116,7 +151,8 @@ export function incomeMultiplier(industry: number): number {
 }
 
 export function incomeFor(state: GameState, player: PlayerState): number {
-  return Math.floor(ownedValue(state, player.faction) * incomeMultiplier(player.industry));
+  const mult = incomeMultiplier(player.industry) + heroMods(player).incomeBonus;
+  return Math.floor(ownedValue(state, player.faction) * mult);
 }
 
 export function currentPlayer(state: GameState): PlayerState {
@@ -154,9 +190,10 @@ export function createGame(config: GameConfig): GameState {
     config,
     turn: 1,
     currentPlayerIndex: 0,
-    players: config.factions.map((faction) => ({
+    players: config.factions.map((faction, i) => ({
       faction,
-      treasury: RULES.STARTING_TREASURY,
+      hero: config.heroes[i],
+      treasury: RULES.STARTING_TREASURY + HERO_BY_ID[config.heroes[i]].mods.startTreasury,
       alive: true,
       offense: 1,
       defense: 1,
@@ -170,6 +207,11 @@ export function createGame(config: GameConfig): GameState {
     winner: null,
     intel: [],
   };
+
+  // Apply heroes that start with extra armies on their capital.
+  gen.starts.forEach((id, i) => {
+    state.tiles[id].army += HERO_BY_ID[config.heroes[i]].mods.startArmies;
+  });
 
   log(state, null, 'A new contest for the realm begins.');
   collectIncome(state);
@@ -197,13 +239,15 @@ export function resolveCombat(
   isNeutral: boolean,
   attOffense: number,
   defDefense: number,
+  attackBonus = 0,
+  defenseBonus = 0,
 ): CombatResult {
   const rng = state.rng;
   let a = attTotal;
   let d = defTotal;
   let rounds = 0;
-  const attChance = attackerHit(attOffense, defDefense);
-  const defChance = defenderHit(defDefense, attOffense, isNeutral);
+  const attChance = clampHit(attackerHit(attOffense, defDefense) + attackBonus);
+  const defChance = clampHit(defenderHit(defDefense, attOffense, isNeutral) + defenseBonus);
 
   let safety = 0;
   while (a > 0 && d > 0 && safety++ < 5000) {
@@ -274,9 +318,7 @@ export function validate(state: GameState, action: GameAction): Validation {
     if (action.army > 0 && !canHold(tile.type, 'army')) return err('Armies need a land tile.');
     if (action.navy > 0 && !canHold(tile.type, 'navy')) return err('Navies need a sea tile.');
     if (action.air > 0 && !canHold(tile.type, 'air')) return err('Cannot build air here.');
-    const cost =
-      action.army * UNIT.army.cost + action.navy * UNIT.navy.cost + action.air * UNIT.air.cost;
-    if (cost > player.treasury) return err('Not enough money.');
+    if (buildCostFor(player, action) > player.treasury) return err('Not enough money.');
     return ok;
   }
 
@@ -301,7 +343,7 @@ export function validate(state: GameState, action: GameAction): Validation {
   if (action.type === 'research') {
     const level = trackLevel(player, action.track);
     if (level >= MAX_TECH) return err('Already at the highest age for that track.');
-    if (researchCost(level) > player.treasury) return err('Not enough money to research.');
+    if (researchCostFor(player, level) > player.treasury) return err('Not enough money to research.');
     return ok;
   }
 
@@ -310,13 +352,13 @@ export function validate(state: GameState, action: GameAction): Validation {
     const to = state.tiles[action.to];
     if (!from || !to) return err('Unknown tile.');
     if (from.owner !== player.faction) return err('You can only strike from your own tile.');
-    if (!canStrike(player.offense)) return err('Strikes need Weapons level 4 (Drone Age).');
+    if (!canPlayerStrike(player)) return err('Strikes need higher Weapons tech (Drone Age).');
     if (to.owner === player.faction) return err('You cannot strike your own tile.');
     if (tileTotal(to) <= 0) return err('No forces there to strike.');
-    if (!strikeTargets(state, action.from, player.offense).has(action.to)) {
+    if (!strikeTargets(state, action.from, player).has(action.to)) {
       return err('That target is out of range.');
     }
-    if (RULES.STRIKE_COST > player.treasury) return err('Not enough money to strike.');
+    if (strikeCostFor(player) > player.treasury) return err('Not enough money to strike.');
     return ok;
   }
 
@@ -325,18 +367,18 @@ export function validate(state: GameState, action: GameAction): Validation {
     if (!t) return err('Unknown tile.');
     if (t.owner === player.faction) return err('You already see your own forces.');
     if (state.intel.includes(action.tileId)) return err('Already revealed this turn.');
-    if (RULES.SPY_COST > player.treasury) return err('Not enough money to spy.');
+    if (spyCostFor(player) > player.treasury) return err('Not enough money to spy.');
     return ok;
   }
 
   return ok; // endTurn
 }
 
-/** Enemy/neutral tiles a faction can strike from `from`, given its weapons. */
-export function strikeTargets(state: GameState, from: string, offense: number): Set<string> {
-  if (!canStrike(offense)) return new Set();
+/** Enemy/neutral tiles a faction can strike from `from`, given its hero/weapons. */
+export function strikeTargets(state: GameState, from: string, player: PlayerState): Set<string> {
+  if (!canPlayerStrike(player)) return new Set();
   const owner = state.tiles[from].owner;
-  const inRange = hasGlobalStrike(offense) ? Object.keys(state.tiles) : neighborsOf(state, from);
+  const inRange = hasGlobalStrike(player.offense) ? Object.keys(state.tiles) : neighborsOf(state, from);
   return new Set(
     inRange.filter((id) => {
       const t = state.tiles[id];
@@ -381,8 +423,7 @@ export function apply(state: GameState, action: GameAction): GameState {
 function applyBuild(state: GameState, action: Extract<GameAction, { type: 'build' }>): void {
   const player = currentPlayer(state);
   const ts = state.tiles[action.tileId];
-  const cost =
-    action.army * UNIT.army.cost + action.navy * UNIT.navy.cost + action.air * UNIT.air.cost;
+  const cost = buildCostFor(player, action);
   player.treasury -= cost;
   ts.army += action.army;
   ts.navy += action.navy;
@@ -417,7 +458,16 @@ function applyMove(state: GameState, action: Extract<GameAction, { type: 'move' 
   const defDefense = defender ? defender.defense : 1;
   const attTotal = movingTotal(moving);
   const defTotal = tileTotal(to);
-  const result = resolveCombat(state, attTotal, defTotal, isNeutral, player.offense, defDefense);
+  const result = resolveCombat(
+    state,
+    attTotal,
+    defTotal,
+    isNeutral,
+    player.offense,
+    defDefense,
+    heroMods(player).attackHit,
+    defender ? heroMods(defender).defenseHit : 0,
+  );
   const toName = tileLabel(state, action.to);
   const defName = to.owner ? FACTION_BY_ID[to.owner].name : 'the local garrison';
 
@@ -466,14 +516,16 @@ function trackLevel(player: PlayerState, track: ResearchTrack): number {
 function applyResearch(state: GameState, action: Extract<GameAction, { type: 'research' }>): void {
   const player = currentPlayer(state);
   const level = trackLevel(player, action.track);
-  const cost = researchCost(level);
+  const cost = researchCostFor(player, level);
   player.treasury -= cost;
   if (action.track === 'offense') player.offense += 1;
   else if (action.track === 'defense') player.defense += 1;
   else player.industry += 1;
   const age = ageFor(player.offense, player.defense, player.industry);
   const extra =
-    action.track === 'offense' && level + 1 === STRIKE_TECH ? ' — missile strikes unlocked!' : '';
+    action.track === 'offense' && level + 1 === effectiveStrikeTech(player)
+      ? ' — missile strikes unlocked!'
+      : '';
   log(
     state,
     player.faction,
@@ -495,29 +547,32 @@ function reduceForces(ts: TileState, amount: number): number {
 function applyStrike(state: GameState, action: Extract<GameAction, { type: 'strike' }>): void {
   const player = currentPlayer(state);
   const to = state.tiles[action.to];
-  player.treasury -= RULES.STRIKE_COST;
+  const cost = strikeCostFor(player);
+  player.treasury -= cost;
   const global = hasGlobalStrike(player.offense);
-  const base = RULES.STRIKE_BASE_DMG + (global ? RULES.STRIKE_GLOBAL_BONUS : 0);
+  const base =
+    RULES.STRIKE_BASE_DMG + (global ? RULES.STRIKE_GLOBAL_BONUS : 0) + heroMods(player).strikeDamageBonus;
   const damage = base + nextInt(state.rng, 0, player.offense);
   const killed = reduceForces(to, damage);
   log(
     state,
     player.faction,
     `${FACTION_BY_ID[player.faction].name} launched ${global ? 'an orbital strike' : 'a missile strike'} on ` +
-      `${tileLabel(state, action.to)}, destroying ${killed} ${killed === 1 ? 'unit' : 'units'} (–$${RULES.STRIKE_COST}).`,
+      `${tileLabel(state, action.to)}, destroying ${killed} ${killed === 1 ? 'unit' : 'units'} (–$${cost}).`,
   );
 }
 
 function applySpy(state: GameState, action: Extract<GameAction, { type: 'spy' }>): void {
   const player = currentPlayer(state);
   const t = state.tiles[action.tileId];
-  player.treasury -= RULES.SPY_COST;
+  const cost = spyCostFor(player);
+  player.treasury -= cost;
   state.intel.push(action.tileId);
   const holder = t.owner ? FACTION_BY_ID[t.owner].name : 'neutral forces';
   log(
     state,
     player.faction,
-    `Spies scout ${tileLabel(state, action.tileId)}: ${tileTotal(t)} units (${holder}) (–$${RULES.SPY_COST}).`,
+    `Spies scout ${tileLabel(state, action.tileId)}: ${tileTotal(t)} units (${holder}) (–$${cost}).`,
   );
 }
 

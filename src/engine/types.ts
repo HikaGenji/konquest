@@ -11,6 +11,18 @@ export interface Faction {
 export type TileType = 'land' | 'sea' | 'mountain';
 export type UnitType = 'army' | 'navy' | 'air';
 
+export type HeroId =
+  | 'caesar'
+  | 'attila'
+  | 'leonidas'
+  | 'genghis'
+  | 'napoleon'
+  | 'alexander'
+  | 'cleopatra'
+  | 'suntzu'
+  | 'hannibal'
+  | 'saladin';
+
 export interface Tile {
   id: string;
   q: number;
@@ -32,6 +44,7 @@ export interface TileState {
 
 export interface PlayerState {
   faction: FactionId;
+  hero: HeroId;
   treasury: number;
   alive: boolean;
   /** Weapons tech (offense), 1..MAX_TECH. */
@@ -48,6 +61,8 @@ export type GameStatus = 'playing' | 'finished';
 
 export interface GameConfig {
   factions: FactionId[];
+  /** Chosen hero per faction, in the same order. */
+  heroes: HeroId[];
   seed: number;
   maxTurns: number;
   /** Hex board radius (board size). */

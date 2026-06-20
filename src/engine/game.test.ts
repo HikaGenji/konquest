@@ -15,17 +15,31 @@ import {
   MAX_TECH,
   ownedTiles,
   ownedValue,
+  researchCost,
+  researchCostFor,
   RULES,
   STRIKE_TECH,
   strikeTargets,
   totalValue,
   UNIT,
+  unitCostFor,
   validate,
 } from './index';
-import type { FactionId, GameState, Tile } from './types';
+import type { FactionId, GameState, HeroId, Tile } from './types';
 
-function newGame(seed = 42, factions: FactionId[] = ['crimson', 'azure'], radius = 3): GameState {
-  return createGame({ factions, seed, maxTurns: 30, radius });
+function newGame(
+  seed = 42,
+  factions: FactionId[] = ['crimson', 'azure'],
+  radius = 3,
+  heroes?: HeroId[],
+): GameState {
+  return createGame({
+    factions,
+    heroes: heroes ?? factions.map(() => 'leonidas' as HeroId),
+    seed,
+    maxTurns: 30,
+    radius,
+  });
 }
 
 function setType(g: GameState, id: string, type: Tile['type']): void {
@@ -174,9 +188,10 @@ describe('strikes', () => {
   it('are locked until Weapons L4 and gain global range at L6', () => {
     const g = newGame();
     const cap = ownedTiles(g, 'crimson')[0];
-    expect(strikeTargets(g, cap, 1).size).toBe(0);
-    const adjacent = strikeTargets(g, cap, STRIKE_TECH);
-    const global = strikeTargets(g, cap, MAX_TECH);
+    const p = (offense: number) => ({ ...g.players[0], offense });
+    expect(strikeTargets(g, cap, p(1)).size).toBe(0);
+    const adjacent = strikeTargets(g, cap, p(STRIKE_TECH));
+    const global = strikeTargets(g, cap, p(MAX_TECH));
     expect(global.size).toBeGreaterThanOrEqual(adjacent.size);
   });
 });
@@ -200,6 +215,22 @@ describe('fog of war & spies', () => {
     expect(g.intel).toContain(enemy);
     g = apply(g, { type: 'endTurn' });
     expect(g.intel).toEqual([]);
+  });
+});
+
+describe('heroes', () => {
+  it('Alexander starts with extra treasury and armies', () => {
+    const g = newGame(1, ['crimson', 'azure'], 3, ['alexander', 'leonidas']);
+    const cap = ownedTiles(g, 'crimson')[0];
+    expect(g.tiles[cap].army).toBe(RULES.CAPITAL_ARMIES + 6);
+    expect(g.players[0].treasury).toBe(RULES.STARTING_TREASURY + 25 + ownedValue(g, 'crimson'));
+  });
+
+  it('Saladin discounts research and Genghis discounts armies', () => {
+    const g = newGame(1, ['crimson', 'azure'], 3, ['saladin', 'genghis']);
+    expect(researchCostFor(g.players[0], 1)).toBeLessThan(researchCost(1));
+    expect(unitCostFor(g.players[0], 'army')).toBe(UNIT.army.cost); // Saladin: no unit discount
+    expect(unitCostFor(g.players[1], 'army')).toBeLessThan(UNIT.army.cost); // Genghis
   });
 });
 

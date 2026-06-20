@@ -24,8 +24,11 @@ npm run dev        # open the printed localhost URL
 
 ## How to play
 
-1. **Setup** — pick 2–4 factions, a map size and a seed, then generate the map. Each faction starts
-   on one land tile with the same treasury.
+1. **Setup** — pick 2–4 factions, a map size and a seed, then each player drafts one of **10 legendary
+   heroes** (Caesar, Attila, Leonidas, Genghis Khan, Napoleon, Alexander, Cleopatra, Sun Tzu, Hannibal,
+   Saladin). Your hero is your profile and gives a unique passive — e.g. +attack, cheaper research,
+   bonus income, free spying, discounted units, or stronger strikes. Each faction starts on one land
+   tile with the same base budget.
 2. Each turn you **collect income** equal to the value of the tiles you hold (×Industry bonus).
 3. Tap one of **your** tiles to:
    - **Build** units the terrain allows (🪖 on land, ⚓ on sea, ✈️ anywhere); or
@@ -71,6 +74,7 @@ identical output (which is what makes the tests and a future server simple).
 - [x] Procedural hex map (land/sea/mountain) with terrain-gated unit types
 - [x] Tech tree: weapons/defenses/industry, six Ages, age-gated strikes
 - [x] Fog of war, spies, and a between-turns handoff screen
+- [x] 10 historical heroes with unique passive abilities (player profiles)
 - [ ] Online multiplayer (wire the client to `server/`)
 - [ ] AI opponents for empty seats
 - [ ] Terrain clustering / richer map generation, more unit types
