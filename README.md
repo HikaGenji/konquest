@@ -29,7 +29,9 @@ npm run dev        # open the printed localhost URL
    Saladin). Your hero is your profile and gives a unique passive — e.g. +attack, cheaper research,
    bonus income, free spying, discounted units, or stronger strikes. Each faction starts on one land
    tile with the same base budget.
-2. Each turn you **collect income** equal to the value of the tiles you hold (×Industry bonus).
+2. Each turn you **collect income** equal to the value of the tiles you hold (×Industry bonus), and
+   get **3 actions** to spend — build, move, research, strike or spy each cost one (ending your turn
+   is free). The ⚡ counter in the HUD shows how many remain.
 3. Tap one of **your** tiles to:
    - **Build** units the terrain allows (🪖 on land, ⚓ on sea, ✈️ anywhere); or
    - **Move / attack** — adjacent tiles glow; tap one and choose which units to send. Units may only

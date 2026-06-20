@@ -48,7 +48,11 @@ export const RULES = {
   STARTING_TREASURY: 60,
   CAPITAL_ARMIES: 10,
   VICTORY_VALUE_FRACTION: 0.6,
+  /** Actions (build/move/research/strike/spy) allowed per turn. */
+  ACTIONS_PER_TURN: 3,
 } as const;
+
+export const ACTIONS_PER_TURN = RULES.ACTIONS_PER_TURN;
 
 export function unitCost(unit: UnitType): number {
   return UNIT[unit].cost;
@@ -206,6 +210,7 @@ export function createGame(config: GameConfig): GameState {
     log: [],
     winner: null,
     intel: [],
+    actionsLeft: RULES.ACTIONS_PER_TURN,
   };
 
   // Apply heroes that start with extra armies on their capital.
@@ -307,6 +312,10 @@ function movingTotal(a: { army: number; navy: number; air: number }): number {
 export function validate(state: GameState, action: GameAction): Validation {
   if (state.status !== 'playing') return err('The game is over.');
   const player = currentPlayer(state);
+
+  if (action.type !== 'endTurn' && state.actionsLeft <= 0) {
+    return err('No actions left this turn — end your turn.');
+  }
 
   if (action.type === 'build') {
     const ts = state.tiles[action.tileId];
@@ -417,6 +426,7 @@ export function apply(state: GameState, action: GameAction): GameState {
       applyEndTurn(next);
       break;
   }
+  if (action.type !== 'endTurn') next.actionsLeft = Math.max(0, next.actionsLeft - 1);
   return next;
 }
 
@@ -605,6 +615,7 @@ function applyEndTurn(state: GameState): void {
   }
   state.currentPlayerIndex = idx;
   state.intel = [];
+  state.actionsLeft = RULES.ACTIONS_PER_TURN;
 
   if (state.turn > state.config.maxTurns) {
     finishByScore(state);

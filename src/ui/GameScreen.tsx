@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
+  ACTIONS_PER_TURN,
   ageFor,
   apply,
   buildCostFor,
@@ -49,19 +50,20 @@ export function GameScreen({ game, setGame, onEndTurn, onQuit }: Props) {
   const player = game.players[game.currentPlayerIndex];
   const faction = FACTION_BY_ID[player.faction];
   const hero = HERO_BY_ID[player.hero];
+  const out = game.actionsLeft <= 0; // no actions left this turn
   const isOwn = (id: string | null) => !!id && game.tiles[id].owner === player.faction;
 
   const validTargets = useMemo(() => {
-    if (strikeMode || !isOwn(selectedId)) return new Set<string>();
+    if (out || strikeMode || !isOwn(selectedId)) return new Set<string>();
     return new Set(neighborsOf(game, selectedId!));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, game, strikeMode]);
+  }, [selectedId, game, strikeMode, out]);
 
   const strikeOptions = useMemo(() => {
-    if (!strikeMode || !isOwn(selectedId)) return new Set<string>();
+    if (out || !strikeMode || !isOwn(selectedId)) return new Set<string>();
     return strikeTargets(game, selectedId!, player);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, game, strikeMode]);
+  }, [selectedId, game, strikeMode, out]);
 
   const visibleIds = useMemo(() => revealedTo(game), [game]);
 
@@ -139,6 +141,9 @@ export function GameScreen({ game, setGame, onEndTurn, onQuit }: Props) {
             {age.icon} {age.name}
           </span>
           <span className="hud-chip">💰 ${player.treasury}</span>
+          <span className="hud-chip" style={out ? { borderColor: '#f87171', color: '#f87171' } : undefined}>
+            ⚡ {game.actionsLeft}/{ACTIONS_PER_TURN}
+          </span>
           <span className="hud-chip">⏳ {game.turn}/{game.config.maxTurns}</span>
           <span className="hud-chip">🗺️ {sharePct}%</span>
         </div>
@@ -151,21 +156,28 @@ export function GameScreen({ game, setGame, onEndTurn, onQuit }: Props) {
         <div className="research">
           <TechBar player={player} />
           <div className="actions">
-            <button disabled={player.offense >= MAX_TECH || offCost > player.treasury} onClick={() => doResearch('offense')}>
+            <button disabled={out || player.offense >= MAX_TECH || offCost > player.treasury} onClick={() => doResearch('offense')}>
               ⚔️ {player.offense >= MAX_TECH ? 'Weapons maxed' : `Weapons → L${player.offense + 1} ($${offCost})`}
             </button>
-            <button disabled={player.defense >= MAX_TECH || defCost > player.treasury} onClick={() => doResearch('defense')}>
+            <button disabled={out || player.defense >= MAX_TECH || defCost > player.treasury} onClick={() => doResearch('defense')}>
               🛡️ {player.defense >= MAX_TECH ? 'Defenses maxed' : `Defenses → L${player.defense + 1} ($${defCost})`}
             </button>
-            <button disabled={player.industry >= MAX_TECH || indCost > player.treasury} onClick={() => doResearch('industry')}>
+            <button disabled={out || player.industry >= MAX_TECH || indCost > player.treasury} onClick={() => doResearch('industry')}>
               🏭 {player.industry >= MAX_TECH ? 'Industry maxed' : `Industry → L${player.industry + 1} ($${indCost})`}
             </button>
           </div>
           <p className="hint">
-            Income <b>${projectedIncome}/turn</b>.{' '}
-            {canPlayerStrike(player)
-              ? `🚀 ${hasGlobalStrike(player.offense) ? 'Orbital strikes hit anywhere' : 'Missile strikes hit adjacent tiles'}.`
-              : `Reach Weapons L${effectiveStrikeTech(player)} for 🚀 strikes.`}
+            {out ? (
+              <b style={{ color: '#f87171' }}>No actions left — press End turn.</b>
+            ) : (
+              <>
+                <b>{game.actionsLeft} action{game.actionsLeft === 1 ? '' : 's'} left.</b> Income{' '}
+                <b>${projectedIncome}/turn</b>.{' '}
+                {canPlayerStrike(player)
+                  ? `🚀 ${hasGlobalStrike(player.offense) ? 'Orbital strikes hit anywhere' : 'Missile strikes hit adjacent tiles'}.`
+                  : `Reach Weapons L${effectiveStrikeTech(player)} for 🚀 strikes.`}
+              </>
+            )}
           </p>
         </div>
 
@@ -200,7 +212,7 @@ export function GameScreen({ game, setGame, onEndTurn, onQuit }: Props) {
             ) : (
               <div className="build-row">
                 <span>🕵️ Forces hidden — intel required</span>
-                <button disabled={player.treasury < spyCost} onClick={() => doSpy(selectedId!)}>
+                <button disabled={out || player.treasury < spyCost} onClick={() => doSpy(selectedId!)}>
                   Spy (${spyCost})
                 </button>
               </div>
@@ -221,13 +233,13 @@ export function GameScreen({ game, setGame, onEndTurn, onQuit }: Props) {
                   </div>
                 ))}
                 <div className="actions">
-                  <button className="primary" disabled={buildCost === 0 || buildCost > player.treasury} onClick={doBuild}>
+                  <button className="primary" disabled={out || buildCost === 0 || buildCost > player.treasury} onClick={doBuild}>
                     Build — ${buildCost}
                   </button>
                   {canPlayerStrike(player) && (
                     <button
                       className={strikeMode ? 'primary' : ''}
-                      disabled={!strikeMode && (player.treasury < strikeCost || strikeTargets(game, selectedId!, player).size === 0)}
+                      disabled={out || (!strikeMode && (player.treasury < strikeCost || strikeTargets(game, selectedId!, player).size === 0))}
                       onClick={() => setStrikeMode((s) => !s)}
                     >
                       {strikeMode ? '✖ Cancel strike' : `🚀 Strike ($${strikeCost})`}
@@ -235,7 +247,11 @@ export function GameScreen({ game, setGame, onEndTurn, onQuit }: Props) {
                   )}
                 </div>
                 <span className="hint">
-                  {strikeMode ? 'Tap a highlighted target to bombard it.' : 'Tap a highlighted neighbor to move / attack.'}
+                  {out
+                    ? 'No actions left — press End turn.'
+                    : strikeMode
+                      ? 'Tap a highlighted target to bombard it.'
+                      : 'Tap a highlighted neighbor to move / attack.'}
                 </span>
               </>
             ) : (

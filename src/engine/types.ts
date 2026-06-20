@@ -86,6 +86,8 @@ export interface GameState {
   winner: FactionId | null;
   /** Tile ids the CURRENT player has revealed (via spies) this turn. */
   intel: string[];
+  /** Actions the current player has left this turn. */
+  actionsLeft: number;
 }
 
 export interface LogEntry {

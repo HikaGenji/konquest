@@ -258,6 +258,21 @@ describe('heroes', () => {
 });
 
 describe('turn flow & victory', () => {
+  it('limits a player to 3 actions per turn and resets on end turn', () => {
+    let g = newGame();
+    expect(g.actionsLeft).toBe(3);
+    const cap = ownedTiles(g, 'crimson')[0];
+    g.players[0].treasury = 999;
+    for (let i = 0; i < 3; i++) {
+      g = apply(g, { type: 'build', tileId: cap, army: 1, navy: 0, air: 0 });
+    }
+    expect(g.actionsLeft).toBe(0);
+    expect(validate(g, { type: 'build', tileId: cap, army: 1, navy: 0, air: 0 }).ok).toBe(false);
+    expect(validate(g, { type: 'endTurn' }).ok).toBe(true); // ending is always allowed
+    g = apply(g, { type: 'endTurn' });
+    expect(g.actionsLeft).toBe(3);
+  });
+
   it('rotates factions and collects income', () => {
     const g = newGame();
     expect(currentPlayer(g).faction).toBe('crimson');
