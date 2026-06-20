@@ -1,4 +1,4 @@
-import { makeRng, nextFloat, nextInt } from './rng';
+import { makeRng, nextInt } from './rng';
 import {
   boardCorners,
   HEX_DIRECTIONS,
@@ -46,18 +46,6 @@ export function unitsForTerrain(type: TileType): UnitType[] {
   return (['army', 'navy', 'air'] as UnitType[]).filter((u) => canHold(type, u));
 }
 
-function rollTerrain(rngVal: number): TileType {
-  if (rngVal < 0.6) return 'land';
-  if (rngVal < 0.86) return 'sea';
-  return 'mountain';
-}
-
-function tileValue(type: TileType, rng: ReturnType<typeof makeRng>): number {
-  if (type === 'land') return nextInt(rng, 2, 3);
-  if (type === 'mountain') return 2;
-  return 1; // sea
-}
-
 export interface GeneratedMap {
   map: Tile[];
   adj: Record<string, string[]>;
@@ -71,37 +59,101 @@ const STARTS_BY_COUNT: Record<number, number[]> = {
   4: [0, 2, 3, 5],
 };
 
+/**
+ * Grow a connected region from one or more seeds by repeatedly absorbing a
+ * random allowed neighbour. A single seed yields one connected blob; several
+ * seeds yield connected patches. Picking from the (multiset of) frontier
+ * neighbours biases toward compact, organic shapes.
+ */
+function growRegion(
+  rng: ReturnType<typeof makeRng>,
+  region: Set<string>,
+  seeds: string[],
+  target: number,
+  allowed: (id: string) => boolean,
+  neighbours: (id: string) => string[],
+): void {
+  for (const s of seeds) if (allowed(s)) region.add(s);
+  while (region.size < target) {
+    const frontier: string[] = [];
+    for (const id of region) {
+      for (const n of neighbours(id)) {
+        if (allowed(n) && !region.has(n)) frontier.push(n);
+      }
+    }
+    if (frontier.length === 0) break;
+    region.add(frontier[nextInt(rng, 0, frontier.length - 1)]);
+  }
+}
+
 export function generateMap(seed: number, radius: number, factionCount: number): GeneratedMap {
   const rng = makeRng(seed);
   const coords = hexagonBoard(radius);
 
   const map: Tile[] = coords.map(({ q, r }) => {
-    const type = rollTerrain(nextFloat(rng));
     const { x, y } = hexToPixel(q, r, HEX_SIZE);
-    return { id: key(q, r), q, r, x, y, type, value: tileValue(type, rng) };
+    return { id: key(q, r), q, r, x, y, type: 'land' as TileType, value: 2 };
   });
 
   const byKey = new Map(map.map((t) => [t.id, t]));
+  const neighbours = (id: string): string[] => {
+    const t = byKey.get(id)!;
+    return HEX_DIRECTIONS.map((d) => key(t.q + d.q, t.r + d.r)).filter((k) => byKey.has(k));
+  };
 
-  // Adjacency from axial neighbours present on the board.
-  const adj: Record<string, string[]> = {};
-  for (const t of map) {
-    adj[t.id] = HEX_DIRECTIONS.map((d) => key(t.q + d.q, t.r + d.r)).filter((k) =>
-      byKey.has(k),
-    );
-  }
-
-  // Place faction starts at well-spread board corners; force them to be land.
+  // Faction starts at well-spread board corners; these stay land throughout.
   const corners = boardCorners(radius);
   const pick = STARTS_BY_COUNT[factionCount] ?? STARTS_BY_COUNT[4];
-  const starts: string[] = [];
-  for (let i = 0; i < factionCount; i++) {
+  const starts = Array.from({ length: factionCount }, (_, i) => {
     const c = corners[pick[i]];
-    const tile = byKey.get(key(c.q, c.r))!;
-    tile.type = 'land';
-    tile.value = 3;
-    starts.push(tile.id);
+    return key(c.q, c.r);
+  });
+  const blocked = new Set(starts);
+  const total = map.length;
+
+  // --- Sea: one connected ocean, seeded from a board edge (never on a start) ---
+  const sea = new Set<string>();
+  const seaTarget = Math.round(total * 0.26);
+  const border = map.filter(
+    (t) => Math.max(Math.abs(t.q), Math.abs(t.r), Math.abs(t.q + t.r)) === radius && !blocked.has(t.id),
+  );
+  if (border.length > 0 && seaTarget > 0) {
+    const seaSeed = border[nextInt(rng, 0, border.length - 1)].id;
+    growRegion(rng, sea, [seaSeed], seaTarget, (id) => !blocked.has(id), neighbours);
   }
+
+  // --- Mountains: a few connected patches among the remaining land ---
+  const mtn = new Set<string>();
+  const mtnTarget = Math.round(total * 0.14);
+  const land = map.filter((t) => !sea.has(t.id) && !blocked.has(t.id)).map((t) => t.id);
+  const patches = Math.min(3, Math.max(1, Math.round(mtnTarget / 4)));
+  const seeds: string[] = [];
+  for (let i = 0; i < patches && land.length > 0; i++) {
+    seeds.push(land[nextInt(rng, 0, land.length - 1)]);
+  }
+  growRegion(rng, mtn, seeds, mtnTarget, (id) => !blocked.has(id) && !sea.has(id), neighbours);
+
+  // Assign final types and values.
+  for (const t of map) {
+    if (sea.has(t.id)) {
+      t.type = 'sea';
+      t.value = 1;
+    } else if (mtn.has(t.id)) {
+      t.type = 'mountain';
+      t.value = 2;
+    } else {
+      t.type = 'land';
+      t.value = nextInt(rng, 2, 3);
+    }
+  }
+  for (const id of starts) {
+    const t = byKey.get(id)!;
+    t.type = 'land';
+    t.value = 3;
+  }
+
+  const adj: Record<string, string[]> = {};
+  for (const t of map) adj[t.id] = neighbours(t.id);
 
   return { map, adj, starts };
 }

@@ -74,6 +74,29 @@ describe('map generation', () => {
     expect(a.map).toEqual(b.map);
     expect(a.starts).toEqual(b.starts);
   });
+
+  it('grows a single connected sea body', () => {
+    for (const seed of [1, 7, 42, 99, 2024]) {
+      const gen = generateMap(seed, 4, 3);
+      const sea = gen.map.filter((t) => t.type === 'sea').map((t) => t.id);
+      if (sea.length === 0) continue;
+      const set = new Set(sea);
+      const seen = new Set([sea[0]]);
+      const stack = [sea[0]];
+      while (stack.length) {
+        const cur = stack.pop()!;
+        for (const n of gen.adj[cur]) if (set.has(n) && !seen.has(n)) (seen.add(n), stack.push(n));
+      }
+      expect(seen.size, `seed ${seed}`).toBe(sea.length); // one connected component
+    }
+  });
+
+  it('keeps every faction start on land', () => {
+    const gen = generateMap(2024, 4, 4);
+    for (const id of gen.starts) {
+      expect(gen.map.find((t) => t.id === id)!.type).toBe('land');
+    }
+  });
 });
 
 describe('terrain rules', () => {
