@@ -1,11 +1,10 @@
-import { makeRng, nextFloat, nextInt, rollHits } from './rng';
+import { makeRng, nextInt, rollHits } from './rng';
 import {
-  ADJACENCY,
-  edgeType,
-  POWER_BY_ID,
-  TERRITORIES,
-  TERRITORY_BY_ID,
-  TOTAL_MAP_VALUE,
+  canHold,
+  FACTION_BY_ID,
+  generateMap,
+  initialTileStates,
+  UNIT,
 } from './map';
 import {
   ageFor,
@@ -16,56 +15,44 @@ import {
 } from './tech';
 import type {
   CombatResult,
+  FactionId,
   GameAction,
   GameConfig,
   GameState,
   LogEntry,
   PlayerState,
-  PowerId,
   ResearchTrack,
-  TerritoryState,
+  Tile,
+  TileState,
+  UnitType,
 } from './types';
 
 // --- Tunable constants ---------------------------------------------------
 
 export const RULES = {
-  ARMY_COST: 10,
-  NAVY_COST: 30,
-  /** Armies a single navy can carry across a sea edge. */
-  CARRY_PER_NAVY: 4,
-  /** Base per-round hit probability for attacking armies (tech level 1). */
   ATT_HIT: 0.5,
-  /** Base per-round hit probability for a defending great power (tech 1). */
   DEF_HIT: 0.55,
-  /** Independent (neutral) defenders are less effective. */
   NEUTRAL_DEF_HIT: 0.45,
-  /** Hit-chance gained per level of your OWN relevant tech. */
   TECH_HIT_BONUS: 0.06,
-  /** Hit-chance lost to each level of the ENEMY's opposing tech. */
   TECH_HIT_CROSS: 0.03,
   HIT_MIN: 0.2,
   HIT_MAX: 0.85,
-  /** Cost to advance a research track from `level` to `level + 1`. */
   RESEARCH_BASE: 30,
   RESEARCH_STEP: 25,
-  /** Extra income fraction per Industry level above 1. */
   INCOME_PER_INDUSTRY: 0.15,
-  /** Cost in treasury to launch one missile strike. */
   STRIKE_COST: 15,
-  /** Cost in treasury for spies to reveal one foreign territory's forces. */
-  SPY_COST: 10,
-  /** Base armies destroyed by a strike (before tech/variance). */
   STRIKE_BASE_DMG: 2,
-  /** Bonus damage when striking with global (Orbital) range. */
   STRIKE_GLOBAL_BONUS: 2,
+  SPY_COST: 10,
   STARTING_TREASURY: 60,
-  CAPITAL_ARMIES: 12,
-  CAPITAL_NAVIES: 4,
-  /** Win immediately when controlling this fraction of total map value. */
+  CAPITAL_ARMIES: 10,
   VICTORY_VALUE_FRACTION: 0.6,
 } as const;
 
-/** Money required to advance an offense/defense track from `level` to next. */
+export function unitCost(unit: UnitType): number {
+  return UNIT[unit].cost;
+}
+
 export function researchCost(level: number): number {
   return RULES.RESEARCH_BASE + RULES.RESEARCH_STEP * (level - 1);
 }
@@ -74,7 +61,6 @@ function clampHit(x: number): number {
   return Math.min(RULES.HIT_MAX, Math.max(RULES.HIT_MIN, x));
 }
 
-/** Per-round hit chance for an attacker, given both sides' tech levels. */
 export function attackerHit(attOffense: number, defDefense: number): number {
   return clampHit(
     RULES.ATT_HIT +
@@ -83,12 +69,7 @@ export function attackerHit(attOffense: number, defDefense: number): number {
   );
 }
 
-/** Per-round hit chance for a defender, given both sides' tech levels. */
-export function defenderHit(
-  defDefense: number,
-  attOffense: number,
-  isNeutral: boolean,
-): number {
+export function defenderHit(defDefense: number, attOffense: number, isNeutral: boolean): number {
   const base = isNeutral ? RULES.NEUTRAL_DEF_HIT : RULES.DEF_HIT;
   return clampHit(
     base +
@@ -103,110 +84,94 @@ export function clone(state: GameState): GameState {
   return structuredClone(state);
 }
 
-function neutralGarrison(value: number): number {
-  // Smaller, weaker than great-power capitals but scales with worth.
-  return value + 1;
-}
-
-function log(state: GameState, power: PowerId | null, message: string): void {
-  const entry: LogEntry = { turn: state.turn, power, message };
+function log(state: GameState, faction: FactionId | null, message: string): void {
+  const entry: LogEntry = { turn: state.turn, faction, message };
   state.log.push(entry);
-  // Keep the log bounded.
   if (state.log.length > 200) state.log.shift();
 }
 
-export function ownedTerritories(state: GameState, power: PowerId): string[] {
-  return Object.keys(state.territories).filter(
-    (id) => state.territories[id].owner === power,
-  );
+export function tileById(state: GameState, id: string): Tile | undefined {
+  return state.map.find((t) => t.id === id);
 }
 
-export function ownedValue(state: GameState, power: PowerId): number {
-  return ownedTerritories(state, power).reduce(
-    (s, id) => s + TERRITORY_BY_ID[id].value,
-    0,
-  );
+export function tileTotal(ts: TileState): number {
+  return ts.army + ts.navy + ts.air;
 }
 
-/** Income multiplier from a power's Industry tech. */
+export function ownedTiles(state: GameState, faction: FactionId): string[] {
+  return Object.keys(state.tiles).filter((id) => state.tiles[id].owner === faction);
+}
+
+export function ownedValue(state: GameState, faction: FactionId): number {
+  const byId = new Map(state.map.map((t) => [t.id, t]));
+  return ownedTiles(state, faction).reduce((s, id) => s + (byId.get(id)?.value ?? 0), 0);
+}
+
+export function totalValue(state: GameState): number {
+  return state.map.reduce((s, t) => s + t.value, 0);
+}
+
 export function incomeMultiplier(industry: number): number {
   return 1 + (industry - 1) * RULES.INCOME_PER_INDUSTRY;
 }
 
-/** Money a player will collect at the start of their turn. */
 export function incomeFor(state: GameState, player: PlayerState): number {
-  return Math.floor(ownedValue(state, player.power) * incomeMultiplier(player.industry));
+  return Math.floor(ownedValue(state, player.faction) * incomeMultiplier(player.industry));
 }
 
-export function currentPlayer(state: GameState) {
+export function currentPlayer(state: GameState): PlayerState {
   return state.players[state.currentPlayerIndex];
 }
 
-/** Territory ids whose forces the current player can see (own + spied). */
+export function neighborsOf(state: GameState, id: string): string[] {
+  return state.adj[id] ?? [];
+}
+
+/** Tiles whose forces the current player can see (own + spied). */
 export function revealedTo(state: GameState): Set<string> {
-  const power = currentPlayer(state).power;
+  const faction = currentPlayer(state).faction;
   const set = new Set<string>(state.intel);
-  for (const id of Object.keys(state.territories)) {
-    if (state.territories[id].owner === power) set.add(id);
+  for (const id of Object.keys(state.tiles)) {
+    if (state.tiles[id].owner === faction) set.add(id);
   }
   return set;
 }
 
-export function isRevealed(state: GameState, territoryId: string): boolean {
+export function isRevealed(state: GameState, id: string): boolean {
   return (
-    state.territories[territoryId]?.owner === currentPlayer(state).power ||
-    state.intel.includes(territoryId)
+    state.tiles[id]?.owner === currentPlayer(state).faction || state.intel.includes(id)
   );
-}
-
-/** Territories the current player may act from / move to. */
-export function neighbors(territoryId: string): Record<string, 'land' | 'sea'> {
-  return ADJACENCY[territoryId] ?? {};
 }
 
 // --- Setup ---------------------------------------------------------------
 
 export function createGame(config: GameConfig): GameState {
-  const territories: Record<string, TerritoryState> = {};
-  for (const t of TERRITORIES) {
-    territories[t.id] = {
-      owner: null,
-      armies: neutralGarrison(t.value),
-      navies: t.coastal ? 1 : 0,
-    };
-  }
+  const gen = generateMap(config.seed, config.radius, config.factions.length);
+  const tiles = initialTileStates(gen, config.factions, RULES.CAPITAL_ARMIES);
 
   const state: GameState = {
     status: 'playing',
     config,
     turn: 1,
     currentPlayerIndex: 0,
-    players: config.powers.map((power) => ({
-      power,
+    players: config.factions.map((faction) => ({
+      faction,
       treasury: RULES.STARTING_TREASURY,
       alive: true,
       offense: 1,
       defense: 1,
       industry: 1,
     })),
-    territories,
-    rng: makeRng(config.seed),
+    map: gen.map,
+    adj: gen.adj,
+    tiles,
+    rng: makeRng(config.seed ^ 0x9e3779b9),
     log: [],
     winner: null,
     intel: [],
   };
 
-  // Seat each active power in its capital with a strong garrison.
-  for (const power of config.powers) {
-    const capital = POWER_BY_ID[power].capital;
-    territories[capital] = {
-      owner: power,
-      armies: RULES.CAPITAL_ARMIES,
-      navies: TERRITORY_BY_ID[capital].coastal ? RULES.CAPITAL_NAVIES : 0,
-    };
-  }
-
-  log(state, null, 'The contest for the modern world begins.');
+  log(state, null, 'A new contest for the realm begins.');
   collectIncome(state);
   return state;
 }
@@ -218,8 +183,8 @@ function collectIncome(state: GameState): void {
   player.treasury += income;
   log(
     state,
-    player.power,
-    `${POWER_BY_ID[player.power].name} collects $${income} (treasury $${player.treasury}).`,
+    player.faction,
+    `${FACTION_BY_ID[player.faction].name} collects $${income} (treasury $${player.treasury}).`,
   );
 }
 
@@ -227,70 +192,57 @@ function collectIncome(state: GameState): void {
 
 export function resolveCombat(
   state: GameState,
-  attArmies: number,
-  attNavies: number,
-  defArmies: number,
-  defNavies: number,
+  attTotal: number,
+  defTotal: number,
   isNeutral: boolean,
-  isSea: boolean,
   attOffense: number,
   defDefense: number,
 ): CombatResult {
   const rng = state.rng;
-  let aA = attArmies;
-  let aN = attNavies;
-  let dA = defArmies;
-  let dN = defNavies;
+  let a = attTotal;
+  let d = defTotal;
   let rounds = 0;
-
   const attChance = attackerHit(attOffense, defDefense);
   const defChance = defenderHit(defDefense, attOffense, isNeutral);
 
-  // 1. Naval battle for sea invasions where the defender has a fleet.
-  if (isSea && dN > 0 && aN > 0) {
-    let safety = 0;
-    while (aN > 0 && dN > 0 && safety++ < 1000) {
-      const attHits = rollHits(rng, aN, attChance);
-      const defHits = rollHits(rng, dN, defChance);
-      aN = Math.max(0, aN - defHits);
-      dN = Math.max(0, dN - attHits);
-      rounds++;
-    }
-    // If the escorting fleet is wiped out, the embarked troops are lost at sea.
-    if (aN === 0) {
-      return {
-        attackerWins: false,
-        attArmiesLeft: 0,
-        attNaviesLeft: 0,
-        defArmiesLeft: dA,
-        defNaviesLeft: dN,
-        rounds,
-      };
-    }
-  }
-
-  // 2. Land battle for control of the territory.
   let safety = 0;
-  while (aA > 0 && dA > 0 && safety++ < 5000) {
-    const attHits = rollHits(rng, aA, attChance);
-    const defHits = rollHits(rng, dA, defChance);
-    aA = Math.max(0, aA - defHits);
-    dA = Math.max(0, dA - attHits);
+  while (a > 0 && d > 0 && safety++ < 5000) {
+    const attHits = rollHits(rng, a, attChance);
+    const defHits = rollHits(rng, d, defChance);
+    a = Math.max(0, a - defHits);
+    d = Math.max(0, d - attHits);
     rounds++;
   }
 
-  const attackerWins = dA === 0 && aA > 0;
-  return {
-    attackerWins,
-    attArmiesLeft: aA,
-    attNaviesLeft: aN,
-    defArmiesLeft: dA,
-    defNaviesLeft: dN,
-    rounds,
-  };
+  return { attackerWins: d === 0 && a > 0, attLeft: a, defLeft: d, rounds };
 }
 
-// --- Action validation ---------------------------------------------------
+type Forces = { army: number; navy: number; air: number };
+
+/** Distribute `survivors` across the three unit types in their original ratio. */
+function distribute(orig: Forces, survivors: number): Forces {
+  const total = orig.army + orig.navy + orig.air;
+  if (total === 0 || survivors <= 0) return { army: 0, navy: 0, air: 0 };
+  if (survivors >= total) return { ...orig };
+  const out = {
+    army: Math.floor((orig.army / total) * survivors),
+    navy: Math.floor((orig.navy / total) * survivors),
+    air: Math.floor((orig.air / total) * survivors),
+  };
+  let used = out.army + out.navy + out.air;
+  // Hand out the rounding remainder to the largest contingents first.
+  const order = (['army', 'navy', 'air'] as UnitType[]).sort((x, y) => orig[y] - orig[x]);
+  for (const u of order) {
+    if (used >= survivors) break;
+    if (orig[u] > out[u]) {
+      out[u]++;
+      used++;
+    }
+  }
+  return out;
+}
+
+// --- Validation ----------------------------------------------------------
 
 export interface ValidationOk {
   ok: true;
@@ -304,45 +256,45 @@ export type Validation = ValidationOk | ValidationErr;
 const ok: ValidationOk = { ok: true };
 const err = (reason: string): ValidationErr => ({ ok: false, reason });
 
+function movingTotal(a: { army: number; navy: number; air: number }): number {
+  return a.army + a.navy + a.air;
+}
+
 export function validate(state: GameState, action: GameAction): Validation {
   if (state.status !== 'playing') return err('The game is over.');
   const player = currentPlayer(state);
 
   if (action.type === 'build') {
-    const ts = state.territories[action.territoryId];
-    if (!ts) return err('Unknown territory.');
-    if (ts.owner !== player.power) return err('You can only build in your own territory.');
-    if (action.armies < 0 || action.navies < 0) return err('Invalid quantity.');
-    if (action.armies === 0 && action.navies === 0) return err('Nothing to build.');
-    if (action.navies > 0 && !TERRITORY_BY_ID[action.territoryId].coastal) {
-      return err('Navies can only be built in coastal territories.');
-    }
-    const cost = action.armies * RULES.ARMY_COST + action.navies * RULES.NAVY_COST;
+    const ts = state.tiles[action.tileId];
+    const tile = tileById(state, action.tileId);
+    if (!ts || !tile) return err('Unknown tile.');
+    if (ts.owner !== player.faction) return err('You can only build on your own tile.');
+    if (action.army < 0 || action.navy < 0 || action.air < 0) return err('Invalid quantity.');
+    if (movingTotal(action) === 0) return err('Nothing to build.');
+    if (action.army > 0 && !canHold(tile.type, 'army')) return err('Armies need a land tile.');
+    if (action.navy > 0 && !canHold(tile.type, 'navy')) return err('Navies need a sea tile.');
+    if (action.air > 0 && !canHold(tile.type, 'air')) return err('Cannot build air here.');
+    const cost =
+      action.army * UNIT.army.cost + action.navy * UNIT.navy.cost + action.air * UNIT.air.cost;
     if (cost > player.treasury) return err('Not enough money.');
     return ok;
   }
 
   if (action.type === 'move') {
-    const from = state.territories[action.from];
-    const to = state.territories[action.to];
-    if (!from || !to) return err('Unknown territory.');
-    if (from.owner !== player.power) return err('You can only move from your own territory.');
-    const type = edgeType(action.from, action.to);
-    if (!type) return err('Those territories are not connected.');
-    if (action.armies < 0 || action.navies < 0) return err('Invalid quantity.');
-    if (action.armies > from.armies) return err('Not enough armies.');
-    if (action.navies > from.navies) return err('Not enough navies.');
-    if (type === 'land') {
-      if (action.navies > 0) return err('Navies cannot use a land route.');
-      if (action.armies === 0) return err('Nothing to move.');
-    } else {
-      // Sea route.
-      if (action.navies === 0) return err('A sea crossing needs at least one navy.');
-      const capacity = action.navies * RULES.CARRY_PER_NAVY;
-      if (action.armies > capacity) {
-        return err(`Those navies can carry at most ${capacity} armies.`);
-      }
+    const from = state.tiles[action.from];
+    const to = state.tiles[action.to];
+    const toTile = tileById(state, action.to);
+    if (!from || !to || !toTile) return err('Unknown tile.');
+    if (from.owner !== player.faction) return err('You can only move from your own tile.');
+    if (!neighborsOf(state, action.from).includes(action.to)) return err('Tiles are not adjacent.');
+    if (action.army < 0 || action.navy < 0 || action.air < 0) return err('Invalid quantity.');
+    if (action.army > from.army || action.navy > from.navy || action.air > from.air) {
+      return err('Not enough units.');
     }
+    if (movingTotal(action) === 0) return err('Nothing to move.');
+    if (action.army > 0 && !canHold(toTile.type, 'army')) return err('Armies cannot enter that terrain.');
+    if (action.navy > 0 && !canHold(toTile.type, 'navy')) return err('Navies can only go on sea.');
+    if (action.air > 0 && !canHold(toTile.type, 'air')) return err('Air cannot go there.');
     return ok;
   }
 
@@ -354,13 +306,13 @@ export function validate(state: GameState, action: GameAction): Validation {
   }
 
   if (action.type === 'strike') {
-    const from = state.territories[action.from];
-    const to = state.territories[action.to];
-    if (!from || !to) return err('Unknown territory.');
-    if (from.owner !== player.power) return err('You can only strike from your own territory.');
-    if (!canStrike(player.offense)) return err('Missile strikes need Weapons level 4 (Drone Age).');
-    if (to.owner === player.power) return err('You cannot strike your own territory.');
-    if (to.armies <= 0) return err('No forces there to strike.');
+    const from = state.tiles[action.from];
+    const to = state.tiles[action.to];
+    if (!from || !to) return err('Unknown tile.');
+    if (from.owner !== player.faction) return err('You can only strike from your own tile.');
+    if (!canStrike(player.offense)) return err('Strikes need Weapons level 4 (Drone Age).');
+    if (to.owner === player.faction) return err('You cannot strike your own tile.');
+    if (tileTotal(to) <= 0) return err('No forces there to strike.');
     if (!strikeTargets(state, action.from, player.offense).has(action.to)) {
       return err('That target is out of range.');
     }
@@ -369,10 +321,10 @@ export function validate(state: GameState, action: GameAction): Validation {
   }
 
   if (action.type === 'spy') {
-    const t = state.territories[action.territoryId];
-    if (!t) return err('Unknown territory.');
-    if (t.owner === player.power) return err('You already see your own forces.');
-    if (state.intel.includes(action.territoryId)) return err('Already revealed this turn.');
+    const t = state.tiles[action.tileId];
+    if (!t) return err('Unknown tile.');
+    if (t.owner === player.faction) return err('You already see your own forces.');
+    if (state.intel.includes(action.tileId)) return err('Already revealed this turn.');
     if (RULES.SPY_COST > player.treasury) return err('Not enough money to spy.');
     return ok;
   }
@@ -380,21 +332,15 @@ export function validate(state: GameState, action: GameAction): Validation {
   return ok; // endTurn
 }
 
-/** Enemy/neutral territories a power can hit from `from`, given its weapons. */
-export function strikeTargets(
-  state: GameState,
-  from: string,
-  offense: number,
-): Set<string> {
+/** Enemy/neutral tiles a faction can strike from `from`, given its weapons. */
+export function strikeTargets(state: GameState, from: string, offense: number): Set<string> {
   if (!canStrike(offense)) return new Set();
-  const owner = state.territories[from].owner;
-  const inRange = hasGlobalStrike(offense)
-    ? Object.keys(state.territories)
-    : Object.keys(neighbors(from));
+  const owner = state.tiles[from].owner;
+  const inRange = hasGlobalStrike(offense) ? Object.keys(state.tiles) : neighborsOf(state, from);
   return new Set(
     inRange.filter((id) => {
-      const t = state.territories[id];
-      return id !== from && t.owner !== owner && t.armies > 0;
+      const t = state.tiles[id];
+      return id !== from && t.owner !== owner && tileTotal(t) > 0;
     }),
   );
 }
@@ -404,12 +350,10 @@ export function strikeTargets(
 export function apply(state: GameState, action: GameAction): GameState {
   const check = validate(state, action);
   if (!check.ok) {
-    // Invalid actions are ignored but recorded for debugging/UI feedback.
     const next = clone(state);
-    log(next, currentPlayer(next).power, `Action rejected: ${check.reason}`);
+    log(next, currentPlayer(next).faction, `Action rejected: ${check.reason}`);
     return next;
   }
-
   const next = clone(state);
   switch (action.type) {
     case 'build':
@@ -434,48 +378,78 @@ export function apply(state: GameState, action: GameAction): GameState {
   return next;
 }
 
-function applySpy(
-  state: GameState,
-  action: Extract<GameAction, { type: 'spy' }>,
-): void {
+function applyBuild(state: GameState, action: Extract<GameAction, { type: 'build' }>): void {
   const player = currentPlayer(state);
-  const t = state.territories[action.territoryId];
-  player.treasury -= RULES.SPY_COST;
-  state.intel.push(action.territoryId);
-  const holder = t.owner ? POWER_BY_ID[t.owner].name : 'neutral forces';
-  log(
-    state,
-    player.power,
-    `Spies report ${t.armies} armies${t.navies > 0 ? ` & ${t.navies} navies` : ''} ` +
-      `(${holder}) in ${TERRITORY_BY_ID[action.territoryId].name} (–$${RULES.SPY_COST}).`,
-  );
+  const ts = state.tiles[action.tileId];
+  const cost =
+    action.army * UNIT.army.cost + action.navy * UNIT.navy.cost + action.air * UNIT.air.cost;
+  player.treasury -= cost;
+  ts.army += action.army;
+  ts.navy += action.navy;
+  ts.air += action.air;
+  const parts: string[] = [];
+  if (action.army) parts.push(`${action.army} ${UNIT.army.glyph}`);
+  if (action.navy) parts.push(`${action.navy} ${UNIT.navy.glyph}`);
+  if (action.air) parts.push(`${action.air} ${UNIT.air.glyph}`);
+  log(state, player.faction, `Built ${parts.join(' & ')} (–$${cost}).`);
 }
 
-function applyStrike(
-  state: GameState,
-  action: Extract<GameAction, { type: 'strike' }>,
-): void {
+function applyMove(state: GameState, action: Extract<GameAction, { type: 'move' }>): void {
   const player = currentPlayer(state);
-  const to = state.territories[action.to];
-  player.treasury -= RULES.STRIKE_COST;
+  const from = state.tiles[action.from];
+  const to = state.tiles[action.to];
+  const moving: Forces = { army: action.army, navy: action.navy, air: action.air };
 
-  // Damage scales with weapons tech, with some variance; global strikes hit harder.
-  const global = hasGlobalStrike(player.offense);
-  const base = RULES.STRIKE_BASE_DMG + (global ? RULES.STRIKE_GLOBAL_BONUS : 0);
-  const damage = base + nextInt(state.rng, 0, player.offense);
-  const killed = Math.min(damage, to.armies);
-  to.armies -= killed;
+  from.army -= moving.army;
+  from.navy -= moving.navy;
+  from.air -= moving.air;
 
-  const weapon = global ? 'orbital strike' : 'missile strike';
-  log(
-    state,
-    player.power,
-    `${POWER_BY_ID[player.power].name} launched a ${weapon} on ${TERRITORY_BY_ID[action.to].name}, ` +
-      `destroying ${killed} ${killed === 1 ? 'army' : 'armies'} (–$${RULES.STRIKE_COST}).`,
-  );
+  if (to.owner === player.faction) {
+    to.army += moving.army;
+    to.navy += moving.navy;
+    to.air += moving.air;
+    log(state, player.faction, 'Moved forces to a friendly tile.');
+    return;
+  }
+
+  const isNeutral = to.owner === null;
+  const defender = to.owner ? state.players.find((p) => p.faction === to.owner) : undefined;
+  const defDefense = defender ? defender.defense : 1;
+  const attTotal = movingTotal(moving);
+  const defTotal = tileTotal(to);
+  const result = resolveCombat(state, attTotal, defTotal, isNeutral, player.offense, defDefense);
+  const toName = tileLabel(state, action.to);
+  const defName = to.owner ? FACTION_BY_ID[to.owner].name : 'the local garrison';
+
+  if (result.attackerWins) {
+    const prevOwner = to.owner;
+    const survivors = distribute(moving, result.attLeft);
+    to.owner = player.faction;
+    to.army = survivors.army;
+    to.navy = survivors.navy;
+    to.air = survivors.air;
+    log(
+      state,
+      player.faction,
+      `${FACTION_BY_ID[player.faction].name} captured ${toName} from ${defName} ` +
+        `(${result.attLeft} units survive).`,
+    );
+    if (prevOwner) checkEliminated(state, prevOwner);
+  } else {
+    const survivors = distribute({ army: to.army, navy: to.navy, air: to.air }, result.defLeft);
+    to.army = survivors.army;
+    to.navy = survivors.navy;
+    to.air = survivors.air;
+    log(
+      state,
+      player.faction,
+      `${FACTION_BY_ID[player.faction].name}'s assault on ${toName} was repelled ` +
+        `(${result.defLeft} defenders hold).`,
+    );
+  }
 }
 
-const TRACK_LABEL: Record<string, string> = {
+const TRACK_LABEL: Record<ResearchTrack, string> = {
   offense: 'weapons',
   defense: 'defenses',
   industry: 'industry',
@@ -489,10 +463,7 @@ function trackLevel(player: PlayerState, track: ResearchTrack): number {
       : player.industry;
 }
 
-function applyResearch(
-  state: GameState,
-  action: Extract<GameAction, { type: 'research' }>,
-): void {
+function applyResearch(state: GameState, action: Extract<GameAction, { type: 'research' }>): void {
   const player = currentPlayer(state);
   const level = trackLevel(player, action.track);
   const cost = researchCost(level);
@@ -502,122 +473,74 @@ function applyResearch(
   else player.industry += 1;
   const age = ageFor(player.offense, player.defense, player.industry);
   const extra =
-    action.track === 'offense' && level + 1 === STRIKE_TECH
-      ? ' — missile strikes unlocked!'
-      : '';
+    action.track === 'offense' && level + 1 === STRIKE_TECH ? ' — missile strikes unlocked!' : '';
   log(
     state,
-    player.power,
-    `${POWER_BY_ID[player.power].name} advanced ${TRACK_LABEL[action.track]} to level ${level + 1} ` +
+    player.faction,
+    `${FACTION_BY_ID[player.faction].name} advanced ${TRACK_LABEL[action.track]} to level ${level + 1} ` +
       `(${age.icon} ${age.name} Age, –$${cost})${extra}.`,
   );
 }
 
-function applyBuild(
-  state: GameState,
-  action: Extract<GameAction, { type: 'build' }>,
-): void {
+function reduceForces(ts: TileState, amount: number): number {
+  const before = ts.army + ts.navy + ts.air;
+  const after = Math.max(0, before - amount);
+  const survivors = distribute({ army: ts.army, navy: ts.navy, air: ts.air }, after);
+  ts.army = survivors.army;
+  ts.navy = survivors.navy;
+  ts.air = survivors.air;
+  return before - (ts.army + ts.navy + ts.air);
+}
+
+function applyStrike(state: GameState, action: Extract<GameAction, { type: 'strike' }>): void {
   const player = currentPlayer(state);
-  const ts = state.territories[action.territoryId];
-  const cost = action.armies * RULES.ARMY_COST + action.navies * RULES.NAVY_COST;
-  player.treasury -= cost;
-  ts.armies += action.armies;
-  ts.navies += action.navies;
-  const parts: string[] = [];
-  if (action.armies) parts.push(`${action.armies} armies`);
-  if (action.navies) parts.push(`${action.navies} navies`);
+  const to = state.tiles[action.to];
+  player.treasury -= RULES.STRIKE_COST;
+  const global = hasGlobalStrike(player.offense);
+  const base = RULES.STRIKE_BASE_DMG + (global ? RULES.STRIKE_GLOBAL_BONUS : 0);
+  const damage = base + nextInt(state.rng, 0, player.offense);
+  const killed = reduceForces(to, damage);
   log(
     state,
-    player.power,
-    `Built ${parts.join(' & ')} in ${TERRITORY_BY_ID[action.territoryId].name} (–$${cost}).`,
+    player.faction,
+    `${FACTION_BY_ID[player.faction].name} launched ${global ? 'an orbital strike' : 'a missile strike'} on ` +
+      `${tileLabel(state, action.to)}, destroying ${killed} ${killed === 1 ? 'unit' : 'units'} (–$${RULES.STRIKE_COST}).`,
   );
 }
 
-function applyMove(
-  state: GameState,
-  action: Extract<GameAction, { type: 'move' }>,
-): void {
+function applySpy(state: GameState, action: Extract<GameAction, { type: 'spy' }>): void {
   const player = currentPlayer(state);
-  const from = state.territories[action.from];
-  const to = state.territories[action.to];
-  const type = edgeType(action.from, action.to)!;
-  const fromName = TERRITORY_BY_ID[action.from].name;
-  const toName = TERRITORY_BY_ID[action.to].name;
-
-  // Depart.
-  from.armies -= action.armies;
-  from.navies -= action.navies;
-
-  // Friendly move / reinforcement.
-  if (to.owner === player.power) {
-    to.armies += action.armies;
-    to.navies += action.navies;
-    log(state, player.power, `Moved forces ${fromName} → ${toName}.`);
-    return;
-  }
-
-  // Contested move: combat. Tech levels of both sides shape the odds.
-  const isNeutral = to.owner === null;
-  const defender = to.owner ? state.players.find((p) => p.power === to.owner) : undefined;
-  const defDefense = defender ? defender.defense : 1;
-  const result = resolveCombat(
+  const t = state.tiles[action.tileId];
+  player.treasury -= RULES.SPY_COST;
+  state.intel.push(action.tileId);
+  const holder = t.owner ? FACTION_BY_ID[t.owner].name : 'neutral forces';
+  log(
     state,
-    action.armies,
-    action.navies,
-    to.armies,
-    to.navies,
-    isNeutral,
-    type === 'sea',
-    player.offense,
-    defDefense,
+    player.faction,
+    `Spies scout ${tileLabel(state, action.tileId)}: ${tileTotal(t)} units (${holder}) (–$${RULES.SPY_COST}).`,
   );
-
-  const defenderName = to.owner ? POWER_BY_ID[to.owner].name : 'the local defenders';
-
-  if (result.attackerWins) {
-    const prevOwner = to.owner;
-    to.owner = player.power;
-    to.armies = result.attArmiesLeft;
-    to.navies = TERRITORY_BY_ID[action.to].coastal ? result.attNaviesLeft : 0;
-    log(
-      state,
-      player.power,
-      `${POWER_BY_ID[player.power].name} captured ${toName} from ${defenderName} ` +
-        `(${result.attArmiesLeft} armies survive).`,
-    );
-    if (prevOwner) checkEliminated(state, prevOwner);
-  } else {
-    // Attack repelled. Surviving defenders hold; attackers (and any lost
-    // transports) are gone.
-    to.armies = result.defArmiesLeft;
-    to.navies = result.defNaviesLeft;
-    log(
-      state,
-      player.power,
-      `${POWER_BY_ID[player.power].name}'s assault on ${toName} was repelled ` +
-        `(${result.defArmiesLeft} defenders hold).`,
-    );
-  }
 }
 
-function checkEliminated(state: GameState, power: PowerId): void {
-  const player = state.players.find((p) => p.power === power);
-  if (player && player.alive && ownedTerritories(state, power).length === 0) {
+function tileLabel(state: GameState, id: string): string {
+  const t = tileById(state, id);
+  return t ? `${t.type} (${t.q},${t.r})` : id;
+}
+
+function checkEliminated(state: GameState, faction: FactionId): void {
+  const player = state.players.find((p) => p.faction === faction);
+  if (player && player.alive && ownedTiles(state, faction).length === 0) {
     player.alive = false;
-    log(state, power, `${POWER_BY_ID[power].name} has been eliminated.`);
+    log(state, faction, `${FACTION_BY_ID[faction].name} has been eliminated.`);
   }
 }
 
 function applyEndTurn(state: GameState): void {
   const ending = currentPlayer(state);
-  log(state, ending.power, `${POWER_BY_ID[ending.power].name} ends the turn.`);
+  log(state, ending.faction, `${FACTION_BY_ID[ending.faction].name} ends the turn.`);
 
-  // Mark anyone who lost their last territory.
-  for (const p of state.players) checkEliminated(state, p.power);
-
+  for (const p of state.players) checkEliminated(state, p.faction);
   if (checkVictory(state)) return;
 
-  // Advance to the next living player, wrapping the round counter.
   const n = state.players.length;
   let idx = state.currentPlayerIndex;
   for (let i = 0; i < n; i++) {
@@ -626,40 +549,31 @@ function applyEndTurn(state: GameState): void {
     if (state.players[idx].alive) break;
   }
   state.currentPlayerIndex = idx;
-
-  // The new player starts blind — spy intel does not carry across turns.
   state.intel = [];
 
   if (state.turn > state.config.maxTurns) {
     finishByScore(state);
     return;
   }
-
   collectIncome(state);
 }
-
-// --- Victory -------------------------------------------------------------
 
 function checkVictory(state: GameState): boolean {
   const alive = state.players.filter((p) => p.alive);
   if (alive.length <= 1) {
     state.status = 'finished';
-    state.winner = alive[0]?.power ?? null;
+    state.winner = alive[0]?.faction ?? null;
     if (state.winner) {
-      log(state, state.winner, `${POWER_BY_ID[state.winner].name} stands alone — victory!`);
+      log(state, state.winner, `${FACTION_BY_ID[state.winner].name} stands alone — victory!`);
     }
     return true;
   }
-
+  const total = totalValue(state);
   for (const p of alive) {
-    if (ownedValue(state, p.power) / TOTAL_MAP_VALUE >= RULES.VICTORY_VALUE_FRACTION) {
+    if (ownedValue(state, p.faction) / total >= RULES.VICTORY_VALUE_FRACTION) {
       state.status = 'finished';
-      state.winner = p.power;
-      log(
-        state,
-        p.power,
-        `${POWER_BY_ID[p.power].name} dominates the globe — decisive victory!`,
-      );
+      state.winner = p.faction;
+      log(state, p.faction, `${FACTION_BY_ID[p.faction].name} dominates the realm — victory!`);
       return true;
     }
   }
@@ -668,25 +582,16 @@ function checkVictory(state: GameState): boolean {
 
 function finishByScore(state: GameState): void {
   state.status = 'finished';
-  let best: PowerId | null = null;
+  let best: FactionId | null = null;
   let bestScore = -1;
   for (const p of state.players) {
     if (!p.alive) continue;
-    const score = ownedValue(state, p.power);
+    const score = ownedValue(state, p.faction);
     if (score > bestScore) {
       bestScore = score;
-      best = p.power;
+      best = p.faction;
     }
   }
   state.winner = best;
-  if (best) {
-    log(state, best, `Time's up — ${POWER_BY_ID[best].name} leads and wins on points.`);
-  }
-}
-
-// --- Misc convenience ----------------------------------------------------
-
-/** A quick random tie-breaker helper exposed for the UI (e.g. seed buttons). */
-export function randomSeed(): number {
-  return Math.floor(nextFloat(makeRng(Date.now() & 0xffffffff)) * 0xffffffff);
+  if (best) log(state, best, `Time's up — ${FACTION_BY_ID[best].name} wins on points.`);
 }

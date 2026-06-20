@@ -3,22 +3,25 @@ import {
   ageFor,
   apply,
   canStrike,
+  FACTION_BY_ID,
   hasGlobalStrike,
   incomeFor,
   MAX_TECH,
-  neighbors,
-  ownedTerritories,
+  neighborsOf,
+  ownedTiles,
   ownedValue,
-  POWER_BY_ID,
   researchCost,
   revealedTo,
   RULES,
   strikeTargets,
-  TERRITORY_BY_ID,
-  TOTAL_MAP_VALUE,
+  TERRAIN,
+  tileById,
+  totalValue,
+  UNIT,
+  unitsForTerrain,
 } from '../engine';
-import type { GameState } from '../engine';
-import { WorldMap } from './WorldMap';
+import type { GameState, UnitType } from '../engine';
+import { HexMap } from './HexMap';
 import { MoveModal } from './MoveModal';
 import { TechBar } from './TechBar';
 
@@ -29,21 +32,22 @@ interface Props {
   onQuit: () => void;
 }
 
+type Counts = Record<UnitType, number>;
+const ZERO: Counts = { army: 0, navy: 0, air: 0 };
+
 export function GameScreen({ game, setGame, onEndTurn, onQuit }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pendingMove, setPendingMove] = useState<{ from: string; to: string } | null>(null);
-  const [buildArmies, setBuildArmies] = useState(0);
-  const [buildNavies, setBuildNavies] = useState(0);
+  const [build, setBuild] = useState<Counts>(ZERO);
   const [strikeMode, setStrikeMode] = useState(false);
 
   const player = game.players[game.currentPlayerIndex];
-  const power = POWER_BY_ID[player.power];
-  const isOwn = (id: string | null) => !!id && game.territories[id].owner === player.power;
+  const faction = FACTION_BY_ID[player.faction];
+  const isOwn = (id: string | null) => !!id && game.tiles[id].owner === player.faction;
 
   const validTargets = useMemo(() => {
-    if (strikeMode && isOwn(selectedId)) return new Set<string>();
-    if (!isOwn(selectedId)) return new Set<string>();
-    return new Set(Object.keys(neighbors(selectedId!)));
+    if (strikeMode || !isOwn(selectedId)) return new Set<string>();
+    return new Set(neighborsOf(game, selectedId!));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, game, strikeMode]);
 
@@ -53,13 +57,7 @@ export function GameScreen({ game, setGame, onEndTurn, onQuit }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, game, strikeMode]);
 
-  // Fog of war: ids whose forces this player may see (own + spied this turn).
   const visibleIds = useMemo(() => revealedTo(game), [game]);
-
-  function resetSelectionBuild() {
-    setBuildArmies(0);
-    setBuildNavies(0);
-  }
 
   function handleTap(id: string) {
     if (strikeMode && selectedId && strikeOptions.has(id)) {
@@ -73,55 +71,53 @@ export function GameScreen({ game, setGame, onEndTurn, onQuit }: Props) {
     }
     setStrikeMode(false);
     setSelectedId(id);
-    resetSelectionBuild();
+    setBuild(ZERO);
   }
 
   function doBuild() {
     if (!selectedId) return;
-    setGame(apply(game, { type: 'build', territoryId: selectedId, armies: buildArmies, navies: buildNavies }));
-    resetSelectionBuild();
+    setGame(apply(game, { type: 'build', tileId: selectedId, ...build }));
+    setBuild(ZERO);
   }
-
-  function doMove(armies: number, navies: number) {
+  function doMove(army: number, navy: number, air: number) {
     if (!pendingMove) return;
-    setGame(apply(game, { type: 'move', from: pendingMove.from, to: pendingMove.to, armies, navies }));
+    setGame(apply(game, { type: 'move', from: pendingMove.from, to: pendingMove.to, army, navy, air }));
     setPendingMove(null);
     setSelectedId(null);
   }
-
   function doResearch(track: 'offense' | 'defense' | 'industry') {
     setGame(apply(game, { type: 'research', track }));
   }
-
-  function doSpy(territoryId: string) {
-    setGame(apply(game, { type: 'spy', territoryId }));
+  function doSpy(tileId: string) {
+    setGame(apply(game, { type: 'spy', tileId }));
   }
 
-  const sel = selectedId ? game.territories[selectedId] : null;
-  const selTerr = selectedId ? TERRITORY_BY_ID[selectedId] : null;
-  const sharePct = Math.round((ownedValue(game, player.power) / TOTAL_MAP_VALUE) * 100);
-  const buildCost = buildArmies * RULES.ARMY_COST + buildNavies * RULES.NAVY_COST;
+  const sel = selectedId ? game.tiles[selectedId] : null;
+  const selTile = selectedId ? tileById(game, selectedId) : null;
+  const selVisible = !!selectedId && visibleIds.has(selectedId);
+  const selOwner = sel && sel.owner ? game.players.find((p) => p.faction === sel.owner) : undefined;
+
+  const sharePct = Math.round((ownedValue(game, player.faction) / totalValue(game)) * 100);
   const age = ageFor(player.offense, player.defense, player.industry);
   const offCost = researchCost(player.offense);
   const defCost = researchCost(player.defense);
   const indCost = researchCost(player.industry);
   const projectedIncome = incomeFor(game, player);
-  // Only show this player's own log lines (and neutral/system notes) — rival
-  // amounts stay secret.
+
+  const buildUnits: UnitType[] = selTile ? unitsForTerrain(selTile.type) : [];
+  const buildCost = build.army * UNIT.army.cost + build.navy * UNIT.navy.cost + build.air * UNIT.air.cost;
+
   const recentVisible = game.log
-    .filter((e) => e.power === player.power || e.power === null)
+    .filter((e) => e.faction === player.faction || e.faction === null)
     .slice(-6)
     .reverse();
-  const selVisible = !!selectedId && visibleIds.has(selectedId);
-  const selOwnerPlayer =
-    sel && sel.owner ? game.players.find((p) => p.power === sel.owner) : undefined;
 
   return (
     <div className="game">
       <div className="topbar">
         <div className="turn-power">
-          <span className="power-dot" style={{ background: power.color }} />
-          {power.name}
+          <span className="power-dot" style={{ background: faction.color }} />
+          {faction.name}
         </div>
         <span className="age-chip" style={{ borderColor: age.color, color: age.color }}>
           {age.icon} {age.name}
@@ -136,13 +132,13 @@ export function GameScreen({ game, setGame, onEndTurn, onQuit }: Props) {
           <span className="v">{game.turn}/{game.config.maxTurns}</span>
         </div>
         <div className="stat">
-          <span className="k">World</span>
+          <span className="k">Map</span>
           <span className="v">{sharePct}%</span>
         </div>
         <button className="primary" onClick={onEndTurn}>End turn</button>
       </div>
 
-      <WorldMap
+      <HexMap
         game={game}
         selectedId={selectedId}
         validTargets={validTargets}
@@ -155,72 +151,56 @@ export function GameScreen({ game, setGame, onEndTurn, onQuit }: Props) {
         <div className="research">
           <TechBar player={player} />
           <div className="actions">
-            <button
-              disabled={player.offense >= MAX_TECH || offCost > player.treasury}
-              onClick={() => doResearch('offense')}
-            >
+            <button disabled={player.offense >= MAX_TECH || offCost > player.treasury} onClick={() => doResearch('offense')}>
               ⚔️ {player.offense >= MAX_TECH ? 'Weapons maxed' : `Weapons → L${player.offense + 1} ($${offCost})`}
             </button>
-            <button
-              disabled={player.defense >= MAX_TECH || defCost > player.treasury}
-              onClick={() => doResearch('defense')}
-            >
+            <button disabled={player.defense >= MAX_TECH || defCost > player.treasury} onClick={() => doResearch('defense')}>
               🛡️ {player.defense >= MAX_TECH ? 'Defenses maxed' : `Defenses → L${player.defense + 1} ($${defCost})`}
             </button>
-            <button
-              disabled={player.industry >= MAX_TECH || indCost > player.treasury}
-              onClick={() => doResearch('industry')}
-            >
+            <button disabled={player.industry >= MAX_TECH || indCost > player.treasury} onClick={() => doResearch('industry')}>
               🏭 {player.industry >= MAX_TECH ? 'Industry maxed' : `Industry → L${player.industry + 1} ($${indCost})`}
             </button>
           </div>
           <p className="hint">
-            Income now <b>${projectedIncome}/turn</b>.{' '}
+            Income <b>${projectedIncome}/turn</b>.{' '}
             {canStrike(player.offense)
-              ? `🚀 ${hasGlobalStrike(player.offense) ? 'Orbital strikes hit anywhere' : 'Missile strikes hit adjacent regions'} — select a region and tap "Strike".`
-              : `Reach Weapons L${4} (Drone Age) to unlock 🚀 missile strikes.`}
+              ? `🚀 ${hasGlobalStrike(player.offense) ? 'Orbital strikes hit anywhere' : 'Missile strikes hit adjacent tiles'}.`
+              : 'Reach Weapons L4 (Drone Age) for 🚀 strikes.'}
           </p>
         </div>
 
         {!sel && (
           <>
-            <h3>{power.name}'s turn</h3>
+            <h3>{faction.name}'s turn</h3>
             <p className="meta">
-              Tap one of your regions to build forces or launch a move. Solid lines are land routes;
-              dashed blue lines are sea routes (need navies). Reach 60% of world value to win.
+              Tap one of your tiles to build or move. 🪖 armies hold land · ⚓ navies hold sea · ✈️ air
+              goes anywhere. Capture tiles to grow your income.
             </p>
           </>
         )}
 
-        {sel && selTerr && (
+        {sel && selTile && (
           <>
             <h3>
               <span
                 className="power-dot"
-                style={{ background: sel.owner ? POWER_BY_ID[sel.owner].color : '#5b6b82', width: 14, height: 14 }}
+                style={{ background: sel.owner ? FACTION_BY_ID[sel.owner].color : '#5b6b82', width: 14, height: 14 }}
               />
-              {selTerr.name}
+              {TERRAIN[selTile.type].glyph} {TERRAIN[selTile.type].label} ({selTile.q},{selTile.r})
             </h3>
             <p className="meta">
-              {selTerr.continent} · value {selTerr.value} ·{' '}
-              {sel.owner ? POWER_BY_ID[sel.owner].name : 'Neutral'}
-              {selTerr.coastal ? ' · coastal' : ' · landlocked'}
+              value {selTile.value} · {sel.owner ? FACTION_BY_ID[sel.owner].name : 'Neutral'}
             </p>
 
             {selVisible ? (
               <p className="meta">
-                🪖 {sel.armies} armies{sel.navies > 0 ? ` · ⚓ ${sel.navies} navies` : ''}
-                {selOwnerPlayer
-                  ? ` · ${ageFor(selOwnerPlayer.offense, selOwnerPlayer.defense, selOwnerPlayer.industry).unit}`
-                  : ''}
+                Forces: 🪖 {sel.army} · ⚓ {sel.navy} · ✈️ {sel.air}
+                {selOwner ? ` · ${ageFor(selOwner.offense, selOwner.defense, selOwner.industry).unit}` : ''}
               </p>
             ) : (
               <div className="build-row">
                 <span>🕵️ Forces hidden — intel required</span>
-                <button
-                  disabled={player.treasury < RULES.SPY_COST}
-                  onClick={() => doSpy(selectedId!)}
-                >
+                <button disabled={player.treasury < RULES.SPY_COST} onClick={() => doSpy(selectedId!)}>
                   Spy (${RULES.SPY_COST})
                 </button>
               </div>
@@ -228,40 +208,20 @@ export function GameScreen({ game, setGame, onEndTurn, onQuit }: Props) {
 
             {isOwn(selectedId) ? (
               <>
-                <div className="build-row">
-                  <span>Armies (${RULES.ARMY_COST} each)</span>
-                  <div className="stepper">
-                    <button onClick={() => setBuildArmies((n) => Math.max(0, n - 1))}>−</button>
-                    <span className="num">{buildArmies}</span>
-                    <button onClick={() => setBuildArmies((n) => n + 1)}>+</button>
+                {buildUnits.map((u) => (
+                  <div className="build-row" key={u}>
+                    <span>
+                      {UNIT[u].glyph} {UNIT[u].label} <span className="hint">(${UNIT[u].cost})</span>
+                    </span>
+                    <div className="stepper">
+                      <button onClick={() => setBuild((b) => ({ ...b, [u]: Math.max(0, b[u] - 1) }))}>−</button>
+                      <span className="num">{build[u]}</span>
+                      <button onClick={() => setBuild((b) => ({ ...b, [u]: b[u] + 1 }))}>+</button>
+                    </div>
                   </div>
-                </div>
-                <div className="build-row">
-                  <span>
-                    Navies (${RULES.NAVY_COST} each){!selTerr.coastal && <span className="hint"> — coastal only</span>}
-                  </span>
-                  <div className="stepper">
-                    <button
-                      disabled={!selTerr.coastal}
-                      onClick={() => setBuildNavies((n) => Math.max(0, n - 1))}
-                    >
-                      −
-                    </button>
-                    <span className="num">{buildNavies}</span>
-                    <button
-                      disabled={!selTerr.coastal}
-                      onClick={() => setBuildNavies((n) => n + 1)}
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
+                ))}
                 <div className="actions">
-                  <button
-                    className="primary"
-                    disabled={buildCost === 0 || buildCost > player.treasury}
-                    onClick={doBuild}
-                  >
+                  <button className="primary" disabled={buildCost === 0 || buildCost > player.treasury} onClick={doBuild}>
                     Build — ${buildCost}
                   </button>
                   {canStrike(player.offense) && (
@@ -275,15 +235,11 @@ export function GameScreen({ game, setGame, onEndTurn, onQuit }: Props) {
                   )}
                 </div>
                 <span className="hint">
-                  {strikeMode
-                    ? 'Tap a highlighted ⊕ target to bombard it.'
-                    : 'Tap a highlighted neighbor to move / attack.'}
+                  {strikeMode ? 'Tap a highlighted target to bombard it.' : 'Tap a highlighted neighbor to move / attack.'}
                 </span>
               </>
             ) : (
-              <p className="hint">
-                This region isn't yours. Select one of your adjacent regions, then tap here to attack.
-              </p>
+              <p className="hint">Not yours. Select one of your adjacent tiles, then tap here to attack.</p>
             )}
           </>
         )}
@@ -298,9 +254,7 @@ export function GameScreen({ game, setGame, onEndTurn, onQuit }: Props) {
 
         <div className="actions" style={{ marginTop: 10 }}>
           <button className="ghost" onClick={onQuit}>Quit to menu</button>
-          <span className="hint">
-            You hold {ownedTerritories(game, player.power).length} regions.
-          </span>
+          <span className="hint">You hold {ownedTiles(game, player.faction).length} tiles.</span>
         </div>
       </div>
 

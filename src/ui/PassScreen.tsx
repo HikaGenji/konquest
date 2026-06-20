@@ -1,4 +1,4 @@
-import { POWER_BY_ID } from '../engine';
+import { FACTION_BY_ID } from '../engine';
 import type { GameState } from '../engine';
 
 interface Props {
@@ -10,16 +10,16 @@ interface Props {
  *  player taps to begin, preserving fog-of-war secrecy on one device. */
 export function PassScreen({ game, onBegin }: Props) {
   const player = game.players[game.currentPlayerIndex];
-  const power = POWER_BY_ID[player.power];
+  const faction = FACTION_BY_ID[player.faction];
 
   return (
-    <div className="pass" style={{ ['--c' as string]: power.color }}>
+    <div className="pass" style={{ ['--c' as string]: faction.color }}>
       <div className="pass-card">
         <div className="pass-turn">Turn {game.turn} / {game.config.maxTurns}</div>
-        <span className="pass-dot" style={{ background: power.color }} />
-        <h1>{power.name}</h1>
+        <span className="pass-dot" style={{ background: faction.color }} />
+        <h1>{faction.name}</h1>
         <p className="pass-sub">Pass the device to this player.</p>
-        <p className="hint">🔒 Keep the screen private — rival players shouldn't see your forces, treasury or tech.</p>
+        <p className="hint">🔒 Keep the screen private — rival factions shouldn't see your forces, treasury or tech.</p>
         <button className="primary pass-go" onClick={onBegin}>
           Start turn ▶
         </button>

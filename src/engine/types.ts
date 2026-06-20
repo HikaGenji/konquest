@@ -1,53 +1,37 @@
 import type { Rng } from './rng';
 
-export type PowerId =
-  | 'usa'
-  | 'china'
-  | 'russia'
-  | 'eu'
-  | 'india'
-  | 'brazil';
+export type FactionId = 'crimson' | 'azure' | 'verdant' | 'amber';
 
-export interface Power {
-  id: PowerId;
+export interface Faction {
+  id: FactionId;
   name: string;
-  /** Short label shown on the map. */
-  short: string;
   color: string;
-  /** Territory id of this power's capital / starting region. */
-  capital: string;
 }
 
-export type EdgeType = 'land' | 'sea';
+export type TileType = 'land' | 'sea' | 'mountain';
+export type UnitType = 'army' | 'navy' | 'air';
 
-export interface Territory {
+export interface Tile {
   id: string;
-  name: string;
-  continent: string;
-  /** Layout coordinates on a 1000 x 520 canvas (lon/lat-ish). */
+  q: number;
+  r: number;
+  /** Pixel-space centre for rendering. */
   x: number;
   y: number;
+  type: TileType;
   /** Economic value: income per turn and contribution to score / victory. */
   value: number;
-  coastal: boolean;
 }
 
-/** An undirected connection between two territories. */
-export interface Edge {
-  a: string;
-  b: string;
-  type: EdgeType;
-}
-
-export interface TerritoryState {
-  /** Owning power id, or null for an independent (neutral) territory. */
-  owner: PowerId | null;
-  armies: number;
-  navies: number;
+export interface TileState {
+  owner: FactionId | null;
+  army: number;
+  navy: number;
+  air: number;
 }
 
 export interface PlayerState {
-  power: PowerId;
+  faction: FactionId;
   treasury: number;
   alive: boolean;
   /** Weapons tech (offense), 1..MAX_TECH. */
@@ -63,10 +47,11 @@ export type ResearchTrack = 'offense' | 'defense' | 'industry';
 export type GameStatus = 'playing' | 'finished';
 
 export interface GameConfig {
-  /** Powers controlled by a human, in turn order. */
-  powers: PowerId[];
+  factions: FactionId[];
   seed: number;
   maxTurns: number;
+  /** Hex board radius (board size). */
+  radius: number;
 }
 
 export interface GameState {
@@ -75,17 +60,22 @@ export interface GameState {
   turn: number;
   currentPlayerIndex: number;
   players: PlayerState[];
-  territories: Record<string, TerritoryState>;
+  /** Static board geometry. */
+  map: Tile[];
+  /** Adjacency: tile id -> neighbour tile ids. */
+  adj: Record<string, string[]>;
+  /** Dynamic per-tile ownership and garrisons. */
+  tiles: Record<string, TileState>;
   rng: Rng;
   log: LogEntry[];
-  winner: PowerId | null;
-  /** Territory ids the CURRENT player has revealed (via spies) this turn. */
+  winner: FactionId | null;
+  /** Tile ids the CURRENT player has revealed (via spies) this turn. */
   intel: string[];
 }
 
 export interface LogEntry {
   turn: number;
-  power: PowerId | null;
+  faction: FactionId | null;
   message: string;
 }
 
@@ -93,17 +83,19 @@ export interface LogEntry {
 
 export interface BuildAction {
   type: 'build';
-  territoryId: string;
-  armies: number;
-  navies: number;
+  tileId: string;
+  army: number;
+  navy: number;
+  air: number;
 }
 
 export interface MoveAction {
   type: 'move';
   from: string;
   to: string;
-  armies: number;
-  navies: number;
+  army: number;
+  navy: number;
+  air: number;
 }
 
 export interface ResearchAction {
@@ -118,10 +110,10 @@ export interface StrikeAction {
   to: string;
 }
 
-/** Pay to reveal a single foreign territory's forces for the current turn. */
+/** Pay to reveal a single foreign tile's forces for the current turn. */
 export interface SpyAction {
   type: 'spy';
-  territoryId: string;
+  tileId: string;
 }
 
 export interface EndTurnAction {
@@ -138,9 +130,7 @@ export type GameAction =
 
 export interface CombatResult {
   attackerWins: boolean;
-  attArmiesLeft: number;
-  attNaviesLeft: number;
-  defArmiesLeft: number;
-  defNaviesLeft: number;
+  attLeft: number;
+  defLeft: number;
   rounds: number;
 }

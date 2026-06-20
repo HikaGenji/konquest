@@ -1,4 +1,4 @@
-import { ageFor, ownedTerritories, ownedValue, POWER_BY_ID, TOTAL_MAP_VALUE } from '../engine';
+import { ageFor, FACTION_BY_ID, ownedTiles, ownedValue, totalValue } from '../engine';
 import type { GameState } from '../engine';
 
 interface Props {
@@ -7,10 +7,11 @@ interface Props {
 }
 
 export function FinishedScreen({ game, onRestart }: Props) {
+  const total = totalValue(game);
   const ranked = [...game.players].sort(
-    (a, b) => ownedValue(game, b.power) - ownedValue(game, a.power),
+    (a, b) => ownedValue(game, b.faction) - ownedValue(game, a.faction),
   );
-  const winner = game.winner ? POWER_BY_ID[game.winner] : null;
+  const winner = game.winner ? FACTION_BY_ID[game.winner] : null;
 
   return (
     <div className="finished">
@@ -20,18 +21,17 @@ export function FinishedScreen({ game, onRestart }: Props) {
 
       <div className="scoreboard">
         {ranked.map((p) => {
-          const power = POWER_BY_ID[p.power];
-          const val = ownedValue(game, p.power);
-          const pct = Math.round((val / TOTAL_MAP_VALUE) * 100);
+          const f = FACTION_BY_ID[p.faction];
+          const pct = Math.round((ownedValue(game, p.faction) / total) * 100);
           const age = ageFor(p.offense, p.defense, p.industry);
           return (
-            <div className="row-s" key={p.power}>
-              <span className="power-dot" style={{ background: power.color }} />
+            <div className="row-s" key={p.faction}>
+              <span className="power-dot" style={{ background: f.color }} />
               <span className="grow">
-                {power.name} {!p.alive && '☠️'}
+                {f.name} {!p.alive && '☠️'}
               </span>
               <span className="hint" title={`${age.name} Age`}>{age.icon}</span>
-              <span className="hint">{ownedTerritories(game, p.power).length} regions</span>
+              <span className="hint">{ownedTiles(game, p.faction).length} tiles</span>
               <b style={{ minWidth: 44, textAlign: 'right' }}>{pct}%</b>
             </div>
           );

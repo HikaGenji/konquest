@@ -1,21 +1,30 @@
 import { useState } from 'react';
-import { POWERS } from '../engine';
-import type { PowerId } from '../engine';
+import { FACTIONS } from '../engine';
+import type { FactionId } from '../engine';
 
 interface Props {
-  onStart: (powers: PowerId[], seed: number, maxTurns: number) => void;
+  onStart: (factions: FactionId[], seed: number, maxTurns: number, radius: number) => void;
 }
 
+const SIZES: { label: string; radius: number }[] = [
+  { label: 'Small', radius: 3 },
+  { label: 'Medium', radius: 4 },
+  { label: 'Large', radius: 5 },
+];
+
 export function SetupScreen({ onStart }: Props) {
-  // Pre-select the first two powers so a game is one tap away.
-  const [selected, setSelected] = useState<PowerId[]>(['usa', 'china']);
+  const [selected, setSelected] = useState<FactionId[]>(['crimson', 'azure']);
   const [maxTurns, setMaxTurns] = useState(30);
+  const [radius, setRadius] = useState(4);
   const [seed, setSeed] = useState(() => Math.floor(Math.random() * 1_000_000));
 
-  function toggle(id: PowerId) {
+  function toggle(id: FactionId) {
     setSelected((cur) => {
-      if (cur.includes(id)) return cur.filter((p) => p !== id);
-      if (cur.length >= 6) return cur;
+      if (cur.includes(id)) {
+        if (cur.length <= 2) return cur; // need at least 2
+        return cur.filter((p) => p !== id);
+      }
+      if (cur.length >= 4) return cur;
       return [...cur, id];
     });
   }
@@ -24,27 +33,27 @@ export function SetupScreen({ onStart }: Props) {
 
   return (
     <div className="setup">
-      <h1>🌍 Modern Conquest</h1>
+      <h1>⬡ Hex Conquest</h1>
       <p className="sub">
-        A turn-by-turn struggle of present-day superpowers — a modern reskin of the
-        classic <i>Colonial Conquest</i>. Pass &amp; play hotseat.
+        A randomly generated world of land, sea and mountains. Each faction starts on a single tile
+        with an equal budget — expand, research, and conquer. Pass &amp; play hotseat.
       </p>
 
-      <h3>Choose powers <span className="hint">({selected.length}/6 — tap to add, order = turn order)</span></h3>
+      <h3>Factions <span className="hint">({selected.length}/4 — pick 2 to 4)</span></h3>
       <div className="power-grid">
-        {POWERS.map((p) => {
-          const idx = selected.indexOf(p.id);
+        {FACTIONS.map((f) => {
+          const idx = selected.indexOf(f.id);
           const on = idx >= 0;
           return (
             <div
-              key={p.id}
+              key={f.id}
               className={`power-card${on ? ' selected' : ''}`}
-              style={{ ['--c' as string]: p.color }}
-              onClick={() => toggle(p.id)}
+              style={{ ['--c' as string]: f.color }}
+              onClick={() => toggle(f.id)}
               role="button"
             >
-              <span className="power-dot" style={{ background: p.color }} />
-              <span>{p.name}</span>
+              <span className="power-dot" style={{ background: f.color }} />
+              <span>{f.name}</span>
               {on && <span className="order">P{idx + 1}</span>}
             </div>
           );
@@ -52,14 +61,21 @@ export function SetupScreen({ onStart }: Props) {
       </div>
 
       <div className="field">
+        <label>Map size</label>
+        <div className="row">
+          {SIZES.map((s) => (
+            <button key={s.radius} className={radius === s.radius ? 'primary' : ''} onClick={() => setRadius(s.radius)}>
+              {s.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="field">
         <label>Game length</label>
         <div className="row">
           {[20, 30, 50].map((n) => (
-            <button
-              key={n}
-              className={maxTurns === n ? 'primary' : ''}
-              onClick={() => setMaxTurns(n)}
-            >
+            <button key={n} className={maxTurns === n ? 'primary' : ''} onClick={() => setMaxTurns(n)}>
               {n} turns
             </button>
           ))}
@@ -77,17 +93,17 @@ export function SetupScreen({ onStart }: Props) {
       </div>
 
       <p className="hint">
-        Unselected powers stay neutral and defend their home regions. First to control 60% of the
-        world — or the leader when time runs out — wins.
+        🪖 armies hold land · ⚓ navies hold sea · ✈️ air goes anywhere. Control 60% of the map — or
+        lead when time runs out — to win.
       </p>
 
       <button
         className="primary"
         style={{ width: '100%', marginTop: 12 }}
         disabled={!canStart}
-        onClick={() => onStart(selected, seed, maxTurns)}
+        onClick={() => onStart(selected, seed, maxTurns, radius)}
       >
-        {canStart ? 'Start game' : 'Pick at least 2 powers'}
+        {canStart ? 'Generate map & start' : 'Pick at least 2 factions'}
       </button>
     </div>
   );
