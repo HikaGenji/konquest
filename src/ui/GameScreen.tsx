@@ -122,33 +122,6 @@ export function GameScreen({ game, setGame, onEndTurn, onQuit }: Props) {
 
   return (
     <div className="game">
-      <div className="topbar">
-        <div className="turn-power">
-          <span className="power-dot" style={{ background: faction.color }} />
-          {faction.name}
-        </div>
-        <span className="age-chip" style={{ borderColor: faction.color, color: faction.color }} title={hero.blurb}>
-          {hero.emoji} {hero.name}
-        </span>
-        <span className="age-chip" style={{ borderColor: age.color, color: age.color }}>
-          {age.icon} {age.name}
-        </span>
-        <div className="spacer" />
-        <div className="stat">
-          <span className="k">Treasury</span>
-          <span className="v">${player.treasury}</span>
-        </div>
-        <div className="stat">
-          <span className="k">Turn</span>
-          <span className="v">{game.turn}/{game.config.maxTurns}</span>
-        </div>
-        <div className="stat">
-          <span className="k">Map</span>
-          <span className="v">{sharePct}%</span>
-        </div>
-        <button className="primary" onClick={onEndTurn}>End turn</button>
-      </div>
-
       <HexMap
         game={game}
         selectedId={selectedId}
@@ -156,7 +129,23 @@ export function GameScreen({ game, setGame, onEndTurn, onQuit }: Props) {
         strikeTargets={strikeOptions}
         visibleIds={visibleIds}
         onTap={handleTap}
-      />
+      >
+        <div className="hud-left">
+          <span className="hud-chip" style={{ borderColor: faction.color }} title={hero.blurb}>
+            <span className="power-dot" style={{ background: faction.color }} />
+            {hero.emoji} {faction.name}
+          </span>
+          <span className="hud-chip" style={{ borderColor: age.color, color: age.color }}>
+            {age.icon} {age.name}
+          </span>
+          <span className="hud-chip">💰 ${player.treasury}</span>
+          <span className="hud-chip">⏳ {game.turn}/{game.config.maxTurns}</span>
+          <span className="hud-chip">🗺️ {sharePct}%</span>
+        </div>
+        <div className="hud-right">
+          <button className="primary end-btn" onClick={onEndTurn}>End turn ⏭</button>
+        </div>
+      </HexMap>
 
       <div className="panel">
         <div className="research">

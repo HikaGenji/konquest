@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { FACTION_BY_ID, HEX_SIZE, hexPolygon, TERRAIN, tileTotal } from '../engine';
 import type { GameState } from '../engine';
 
@@ -11,9 +12,11 @@ interface Props {
   strikeTargets: Set<string>;
   visibleIds: Set<string>;
   onTap: (id: string) => void;
+  /** Overlay HUD rendered on top of the map (positioned on the edges). */
+  children?: ReactNode;
 }
 
-export function HexMap({ game, selectedId, validTargets, strikeTargets, visibleIds, onTap }: Props) {
+export function HexMap({ game, selectedId, validTargets, strikeTargets, visibleIds, onTap, children }: Props) {
   const svgRef = useRef<SVGSVGElement | null>(null);
 
   const box = useMemo(() => {
@@ -124,6 +127,8 @@ export function HexMap({ game, selectedId, validTargets, strikeTargets, visibleI
           );
         })}
       </svg>
+
+      {children}
 
       <div className="zoom-controls">
         <button onClick={() => setZoom(view.z * 1.3)} aria-label="Zoom in">+</button>

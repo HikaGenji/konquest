@@ -342,6 +342,44 @@ button.ghost {
   flex-direction: column;
   gap: 6px;
 }
+
+/* HUD overlays on the map edges (keeps controls reachable on small screens) */
+.hud-left {
+  position: absolute;
+  top: calc(8px + env(safe-area-inset-top));
+  left: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  z-index: 5;
+  max-width: 60%;
+}
+.hud-right {
+  position: absolute;
+  top: calc(8px + env(safe-area-inset-top));
+  right: 8px;
+  z-index: 5;
+}
+.hud-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: color-mix(in srgb, var(--panel) 84%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+.end-btn {
+  font-size: 15px;
+  padding: 10px 16px;
+  box-shadow: 0 2px 8px #00000055;
+}
 .zoom-controls button {
   width: 44px;
   padding: 0;
