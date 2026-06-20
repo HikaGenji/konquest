@@ -300,6 +300,15 @@ describe('ai', () => {
     const tilesAfter = ownedTiles(s, 'crimson').length;
     expect(after.treasury !== before.treasury || tilesAfter !== tilesBefore).toBe(true);
   });
+
+  it('plays an AI-vs-AI game to a conclusion and expands', () => {
+    let g = newGame(11, ['crimson', 'azure'], 4, undefined, ['ai', 'ai']);
+    let guard = 0;
+    while (g.status === 'playing' && guard++ < 400) g = aiTakeTurn(g);
+    expect(g.status).toBe('finished');
+    const owned = g.map.filter((t) => g.tiles[t.id].owner !== null).length;
+    expect(owned).toBeGreaterThan(2); // factions captured neutral territory
+  });
 });
 
 describe('turn flow & victory', () => {

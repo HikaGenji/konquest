@@ -81,6 +81,7 @@ identical output (which is what makes the tests and a future server simple).
 - [x] Fog of war, spies, and a between-turns handoff screen
 - [x] 10 historical heroes with unique passive abilities (player profiles)
 - [x] 3 actions per turn (auto-ends) and heuristic AI opponents
+- [x] AI uses combat-odds estimates, transports (amphibious/airborne), and strikes
 - [ ] Online multiplayer (wire the client to `server/`)
-- [ ] Smarter AI (uses fog/heroes/strikes), difficulty levels
+- [ ] AI difficulty levels &amp; fog handicap
 - [ ] Terrain clustering / richer map generation, more unit types
