@@ -23,10 +23,10 @@ export const AGES: Age[] = [
 export const MIN_TECH = 1;
 export const MAX_TECH = AGES.length; // 6
 
-/** Weapons level that unlocks adjacent missile strikes (Drone age). */
-export const STRIKE_TECH = 4;
-/** Weapons level that upgrades strikes to global range (Orbital age). */
-export const STRIKE_GLOBAL_TECH = 6;
+/** Weapons level that unlocks adjacent missile strikes (Precision age). */
+export const STRIKE_TECH = 3;
+/** Weapons level that upgrades strikes to global range (Cyber-AI age). */
+export const STRIKE_GLOBAL_TECH = 5;
 
 /** Which Age (index into AGES) a power with these tech levels sits in. */
 export function ageIndex(offense: number, defense: number, industry: number): number {

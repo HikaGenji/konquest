@@ -85,7 +85,9 @@ function evalTarget(state: GameState, me: PlayerState, from: string, to: string)
   return { send, projectable, need, score, type: tt.type };
 }
 
-function chooseResearch(me: PlayerState): GameAction | null {
+type ResearchMove = Extract<GameAction, { type: 'research' }>;
+
+function chooseResearch(me: PlayerState): ResearchMove | null {
   const off = researchCostFor(me, me.offense);
   const ind = researchCostFor(me, me.industry);
   const def = researchCostFor(me, me.defense);
@@ -97,7 +99,7 @@ function chooseResearch(me: PlayerState): GameAction | null {
   return null;
 }
 
-function chooseAIAction(state: GameState): GameAction | null {
+function chooseAIAction(state: GameState, researchedThisTurn: boolean): GameAction | null {
   const me = currentPlayer(state);
   const mine = ownedTiles(state, me.faction);
   if (mine.length === 0) return null;
@@ -136,11 +138,23 @@ function chooseAIAction(state: GameState): GameAction | null {
     }
   }
 
-  // 3) Build toward the most valuable adjacent target.
   const armyCost = unitCostFor(me, 'army');
   const navyCost = unitCostFor(me, 'navy');
   const airCost = unitCostFor(me, 'air');
   const capital = mine.find((id) => tileById(state, id)!.type === 'land') ?? mine[0];
+
+  // 3) Invest in tech — at most once per turn, and only with a buffer left to
+  //    keep expanding, so the AI matures its weapons/economy over the game.
+  if (!researchedThisTurn) {
+    const research = chooseResearch(me);
+    if (research) {
+      const lvl =
+        research.track === 'offense' ? me.offense : research.track === 'industry' ? me.industry : me.defense;
+      if (me.treasury >= researchCostFor(me, lvl) + armyCost) return research;
+    }
+  }
+
+  // 4) Build toward the most valuable adjacent target.
   if (goal) {
     if (goal.type === 'land' && goal.fromType === 'land' && me.treasury >= armyCost) {
       const n = Math.min(6, Math.floor(me.treasury / armyCost));
@@ -158,9 +172,7 @@ function chooseAIAction(state: GameState): GameAction | null {
     }
   }
 
-  // 4) Tech, then 5) stockpile on the capital.
-  const research = chooseResearch(me);
-  if (research) return research;
+  // 5) Stockpile on the capital.
   if (me.treasury >= armyCost && tileById(state, capital)!.type === 'land') {
     return { type: 'build', tileId: capital, army: Math.min(5, Math.floor(me.treasury / armyCost)), navy: 0, air: 0 };
   }
@@ -171,12 +183,14 @@ function chooseAIAction(state: GameState): GameAction | null {
 export function aiTakeTurn(state: GameState): GameState {
   let s = state;
   let guard = 0;
+  let researched = 0;
   while (s.actionsLeft > 0 && s.status === 'playing' && guard++ < 12) {
-    const action = chooseAIAction(s);
+    const action = chooseAIAction(s, researched > 0);
     if (!action) break;
     const before = s.actionsLeft;
     s = apply(s, action);
     if (s.actionsLeft >= before) break; // action rejected / made no progress
+    if (action.type === 'research') researched++;
   }
   if (s.status === 'playing') s = apply(s, { type: 'endTurn' });
   return s;

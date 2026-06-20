@@ -166,8 +166,10 @@ export function initialTileStates(
 ): Record<string, TileState> {
   const states: Record<string, TileState> = {};
   for (const t of gen.map) {
-    // Neutral garrison of the terrain-appropriate unit, sized by value.
-    const g = t.value;
+    // Neutral garrison of the terrain-appropriate unit. Tougher than raw value
+    // so the map isn't gobbled instantly — which lengthens games and rewards
+    // investing in Weapons tech to break through.
+    const g = t.value + 1;
     states[t.id] = {
       owner: null,
       army: t.type === 'land' ? g : 0,

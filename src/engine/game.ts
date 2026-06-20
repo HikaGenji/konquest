@@ -38,8 +38,8 @@ export const RULES = {
   TECH_HIT_CROSS: 0.03,
   HIT_MIN: 0.2,
   HIT_MAX: 0.85,
-  RESEARCH_BASE: 30,
-  RESEARCH_STEP: 25,
+  RESEARCH_BASE: 20,
+  RESEARCH_STEP: 15,
   INCOME_PER_INDUSTRY: 0.15,
   STRIKE_COST: 15,
   STRIKE_BASE_DMG: 2,
@@ -47,7 +47,7 @@ export const RULES = {
   SPY_COST: 10,
   STARTING_TREASURY: 60,
   CAPITAL_ARMIES: 10,
-  VICTORY_VALUE_FRACTION: 0.6,
+  VICTORY_VALUE_FRACTION: 0.65,
   /** Actions (build/move/research/strike/spy) allowed per turn. */
   ACTIONS_PER_TURN: 3,
   /** Armies a single navy can ferry across sea. */

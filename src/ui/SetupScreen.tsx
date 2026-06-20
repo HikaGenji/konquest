@@ -26,7 +26,7 @@ export function SetupScreen({ onStart }: Props) {
   const [phase, setPhase] = useState<'config' | 'draft'>('config');
   const [selected, setSelected] = useState<FactionId[]>(['crimson', 'azure']);
   const [kinds, setKinds] = useState<Record<string, Kind>>({ crimson: 'human', azure: 'ai' });
-  const [maxTurns, setMaxTurns] = useState(30);
+  const [maxTurns, setMaxTurns] = useState(40);
   const [radius, setRadius] = useState(4);
   const [seed, setSeed] = useState(() => Math.floor(Math.random() * 1_000_000));
 
@@ -154,7 +154,7 @@ export function SetupScreen({ onStart }: Props) {
         <div className="field">
           <label>Game length</label>
           <div className="row">
-            {[20, 30, 50].map((n) => (
+            {[25, 40, 60].map((n) => (
               <button key={n} className={maxTurns === n ? 'primary' : ''} onClick={() => setMaxTurns(n)}>
                 {n} turns
               </button>
