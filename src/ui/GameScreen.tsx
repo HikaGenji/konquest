@@ -11,6 +11,7 @@ import {
   ownedValue,
   POWER_BY_ID,
   researchCost,
+  revealedTo,
   RULES,
   strikeTargets,
   TERRITORY_BY_ID,
@@ -24,10 +25,11 @@ import { TechBar } from './TechBar';
 interface Props {
   game: GameState;
   setGame: (g: GameState) => void;
+  onEndTurn: () => void;
   onQuit: () => void;
 }
 
-export function GameScreen({ game, setGame, onQuit }: Props) {
+export function GameScreen({ game, setGame, onEndTurn, onQuit }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pendingMove, setPendingMove] = useState<{ from: string; to: string } | null>(null);
   const [buildArmies, setBuildArmies] = useState(0);
@@ -50,6 +52,9 @@ export function GameScreen({ game, setGame, onQuit }: Props) {
     return strikeTargets(game, selectedId!, player.offense);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId, game, strikeMode]);
+
+  // Fog of war: ids whose forces this player may see (own + spied this turn).
+  const visibleIds = useMemo(() => revealedTo(game), [game]);
 
   function resetSelectionBuild() {
     setBuildArmies(0);
@@ -84,27 +89,32 @@ export function GameScreen({ game, setGame, onQuit }: Props) {
     setSelectedId(null);
   }
 
-  function endTurn() {
-    setGame(apply(game, { type: 'endTurn' }));
-    setSelectedId(null);
-    setStrikeMode(false);
-    resetSelectionBuild();
-  }
-
   function doResearch(track: 'offense' | 'defense' | 'industry') {
     setGame(apply(game, { type: 'research', track }));
+  }
+
+  function doSpy(territoryId: string) {
+    setGame(apply(game, { type: 'spy', territoryId }));
   }
 
   const sel = selectedId ? game.territories[selectedId] : null;
   const selTerr = selectedId ? TERRITORY_BY_ID[selectedId] : null;
   const sharePct = Math.round((ownedValue(game, player.power) / TOTAL_MAP_VALUE) * 100);
   const buildCost = buildArmies * RULES.ARMY_COST + buildNavies * RULES.NAVY_COST;
-  const recent = game.log.slice(-6).reverse();
   const age = ageFor(player.offense, player.defense, player.industry);
   const offCost = researchCost(player.offense);
   const defCost = researchCost(player.defense);
   const indCost = researchCost(player.industry);
   const projectedIncome = incomeFor(game, player);
+  // Only show this player's own log lines (and neutral/system notes) — rival
+  // amounts stay secret.
+  const recentVisible = game.log
+    .filter((e) => e.power === player.power || e.power === null)
+    .slice(-6)
+    .reverse();
+  const selVisible = !!selectedId && visibleIds.has(selectedId);
+  const selOwnerPlayer =
+    sel && sel.owner ? game.players.find((p) => p.power === sel.owner) : undefined;
 
   return (
     <div className="game">
@@ -129,7 +139,7 @@ export function GameScreen({ game, setGame, onQuit }: Props) {
           <span className="k">World</span>
           <span className="v">{sharePct}%</span>
         </div>
-        <button className="primary" onClick={endTurn}>End turn</button>
+        <button className="primary" onClick={onEndTurn}>End turn</button>
       </div>
 
       <WorldMap
@@ -137,6 +147,7 @@ export function GameScreen({ game, setGame, onQuit }: Props) {
         selectedId={selectedId}
         validTargets={validTargets}
         strikeTargets={strikeOptions}
+        visibleIds={visibleIds}
         onTap={handleTap}
       />
 
@@ -191,15 +202,29 @@ export function GameScreen({ game, setGame, onQuit }: Props) {
               {selTerr.name}
             </h3>
             <p className="meta">
-              {selTerr.continent} · value {selTerr.value} · {sel.armies} armies
-              {sel.navies > 0 ? `, ${sel.navies} navies` : ''} ·{' '}
+              {selTerr.continent} · value {selTerr.value} ·{' '}
               {sel.owner ? POWER_BY_ID[sel.owner].name : 'Neutral'}
-              {(() => {
-                const op = sel.owner ? game.players.find((p) => p.power === sel.owner) : undefined;
-                return op ? ` · ${ageFor(op.offense, op.defense, op.industry).unit}` : '';
-              })()}
               {selTerr.coastal ? ' · coastal' : ' · landlocked'}
             </p>
+
+            {selVisible ? (
+              <p className="meta">
+                🪖 {sel.armies} armies{sel.navies > 0 ? ` · ⚓ ${sel.navies} navies` : ''}
+                {selOwnerPlayer
+                  ? ` · ${ageFor(selOwnerPlayer.offense, selOwnerPlayer.defense, selOwnerPlayer.industry).unit}`
+                  : ''}
+              </p>
+            ) : (
+              <div className="build-row">
+                <span>🕵️ Forces hidden — intel required</span>
+                <button
+                  disabled={player.treasury < RULES.SPY_COST}
+                  onClick={() => doSpy(selectedId!)}
+                >
+                  Spy (${RULES.SPY_COST})
+                </button>
+              </div>
+            )}
 
             {isOwn(selectedId) ? (
               <>
@@ -264,7 +289,7 @@ export function GameScreen({ game, setGame, onQuit }: Props) {
         )}
 
         <div className="log">
-          {recent.map((e, i) => (
+          {recentVisible.map((e, i) => (
             <div className="entry" key={i}>
               <b>T{e.turn}</b> {e.message}
             </div>
@@ -284,6 +309,7 @@ export function GameScreen({ game, setGame, onQuit }: Props) {
           game={game}
           from={pendingMove.from}
           to={pendingMove.to}
+          known={visibleIds.has(pendingMove.to)}
           onConfirm={doMove}
           onCancel={() => setPendingMove(null)}
         />

@@ -6,11 +6,13 @@ interface Props {
   game: GameState;
   from: string;
   to: string;
+  /** Whether the current player can see the destination's true forces. */
+  known: boolean;
   onConfirm: (armies: number, navies: number) => void;
   onCancel: () => void;
 }
 
-export function MoveModal({ game, from, to, onConfirm, onCancel }: Props) {
+export function MoveModal({ game, from, to, known, onConfirm, onCancel }: Props) {
   const type = edgeType(from, to)!;
   const isSea = type === 'sea';
   const src = game.territories[from];
@@ -39,8 +41,10 @@ export function MoveModal({ game, from, to, onConfirm, onCancel }: Props) {
           {verb}: {fromName} → {toName}
         </h3>
         <p className="meta">
-          {isSea ? 'Sea crossing' : 'Land route'} · Defender: {friendly ? 'You' : defLabel} (
-          {dst.armies} armies{dst.navies > 0 ? `, ${dst.navies} navies` : ''})
+          {isSea ? 'Sea crossing' : 'Land route'} · Defender: {friendly ? 'You' : defLabel}{' '}
+          {friendly || known
+            ? `(${dst.armies} armies${dst.navies > 0 ? `, ${dst.navies} navies` : ''})`
+            : '(🕵️ strength unknown — spy to scout first)'}
         </p>
 
         {isSea && (

@@ -19,6 +19,8 @@ interface Props {
   selectedId: string | null;
   validTargets: Set<string>;
   strikeTargets: Set<string>;
+  /** Territories whose troop counts the viewer may see (own + spied). */
+  visibleIds: Set<string>;
   onTap: (id: string) => void;
 }
 
@@ -31,7 +33,7 @@ function fillFor(game: GameState, id: string): string {
   return owner ? POWER_BY_ID[owner].color : '#5b6b82';
 }
 
-export function WorldMap({ game, selectedId, validTargets, strikeTargets, onTap }: Props) {
+export function WorldMap({ game, selectedId, validTargets, strikeTargets, visibleIds, onTap }: Props) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [view, setView] = useState({ cx: MAP_W / 2, cy: MAP_H / 2, z: 1 });
 
@@ -198,9 +200,9 @@ export function WorldMap({ game, selectedId, validTargets, strikeTargets, onTap 
                   strokeWidth={1}
                 />
                 <text className="terr-count" x={t.x} y={t.y}>
-                  {ts.armies}
+                  {visibleIds.has(t.id) ? ts.armies : '?'}
                 </text>
-                {ts.navies > 0 && (
+                {visibleIds.has(t.id) && ts.navies > 0 && (
                   <text className="terr-count" x={t.x} y={t.y + r + 7} style={{ fontSize: 8 }}>
                     ⚓{ts.navies}
                   </text>

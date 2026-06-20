@@ -50,7 +50,13 @@ npm run typecheck  # type-check only
    region — destroying troops without occupying, to soften it for a follow-up invasion. At **Weapons
    L6 (Orbital Age)** strikes go **global** and hit harder. Select one of your regions, tap **Strike**,
    then tap a highlighted ⊕ target.
-8. Press **End turn** to pass the device to the next player.
+8. **Fog of war** 🌫️: you only see exact troop counts in **your own** regions — everywhere else
+   shows `?` (ownership/colors are public, but strength is secret). Your treasury, tech and log are
+   private too.
+9. **🕵️ Spies**: tap any foreign region and pay to reveal its forces for the rest of *your* turn —
+   scout before you commit to an invasion. Intel doesn't carry over to later turns.
+10. Press **End turn**: a **handoff screen** hides the board until the next player taps **Start
+    turn**, so no one peeks at another player's view on a shared device.
 
 ## Architecture
 
@@ -87,6 +93,7 @@ The stack was chosen to grow into full online play without rewrites:
 - [x] Real projected world map (continents from `world-atlas`)
 - [x] Megalomania-style tech tree: three tracks (weapons/defenses/industry), six Ages, and
       age-gated missile/orbital strikes
+- [x] Fog of war, spies (paid intel), and a between-turns handoff screen for hidden-info hotseat
 - [ ] **Online multiplayer** — wire the React client to the WebSocket server in `server/`
       (rooms already broadcast authoritative state and enforce turn order)
 - [ ] Lobby: choose powers, ready-up, reconnect

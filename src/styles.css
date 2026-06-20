@@ -438,6 +438,50 @@ input[type='range'] {
   accent-color: var(--accent);
 }
 
+/* ---------- Handoff / Pass screen ---------- */
+.pass {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--c) 22%, var(--bg)), var(--bg));
+  text-align: center;
+}
+.pass-card {
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.pass-turn {
+  color: var(--muted);
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.pass-dot {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--c) 30%, transparent);
+}
+.pass-card h1 {
+  margin: 4px 0 0;
+  font-size: 30px;
+}
+.pass-sub {
+  margin: 0;
+  color: var(--text);
+}
+.pass-go {
+  margin-top: 14px;
+  font-size: 18px;
+  padding: 14px 28px;
+  width: 100%;
+}
+
 /* ---------- Finished ---------- */
 .finished {
   margin: auto;

@@ -11,6 +11,7 @@ import {
   EDGES,
   incomeFor,
   incomeMultiplier,
+  isRevealed,
   MAX_TECH,
   ownedTerritories,
   ownedValue,
@@ -296,6 +297,38 @@ describe('missile strikes', () => {
     expect(adjacent.has('china_terr')).toBe(false);
     const global = strikeTargets(g, 'usa_terr', MAX_TECH);
     expect(global.has('china_terr')).toBe(true);
+  });
+});
+
+describe('fog of war & spies', () => {
+  it('a player sees its own territories but not foreign ones', () => {
+    const g = newGame();
+    expect(isRevealed(g, 'usa_terr')).toBe(true); // own capital
+    expect(isRevealed(g, 'china_terr')).toBe(false); // rival
+    expect(isRevealed(g, 'mexico')).toBe(false); // neutral
+  });
+
+  it('spying reveals a foreign territory and deducts the cost', () => {
+    const g = newGame();
+    const before = g.players[0].treasury;
+    const next = apply(g, { type: 'spy', territoryId: 'china_terr' });
+    expect(isRevealed(next, 'china_terr')).toBe(true);
+    expect(next.players[0].treasury).toBe(before - RULES.SPY_COST);
+  });
+
+  it('rejects spying on your own land or repeating a reveal', () => {
+    let g = newGame();
+    expect(validate(g, { type: 'spy', territoryId: 'usa_terr' }).ok).toBe(false);
+    g = apply(g, { type: 'spy', territoryId: 'china_terr' });
+    expect(validate(g, { type: 'spy', territoryId: 'china_terr' }).ok).toBe(false);
+  });
+
+  it('intel does not carry across turns', () => {
+    let g = newGame();
+    g = apply(g, { type: 'spy', territoryId: 'china_terr' });
+    expect(g.intel).toContain('china_terr');
+    g = apply(g, { type: 'endTurn' }); // now China's turn
+    expect(g.intel).toEqual([]);
   });
 });
 

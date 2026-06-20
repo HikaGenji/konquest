@@ -79,6 +79,8 @@ export interface GameState {
   rng: Rng;
   log: LogEntry[];
   winner: PowerId | null;
+  /** Territory ids the CURRENT player has revealed (via spies) this turn. */
+  intel: string[];
 }
 
 export interface LogEntry {
@@ -116,6 +118,12 @@ export interface StrikeAction {
   to: string;
 }
 
+/** Pay to reveal a single foreign territory's forces for the current turn. */
+export interface SpyAction {
+  type: 'spy';
+  territoryId: string;
+}
+
 export interface EndTurnAction {
   type: 'endTurn';
 }
@@ -125,6 +133,7 @@ export type GameAction =
   | MoveAction
   | ResearchAction
   | StrikeAction
+  | SpyAction
   | EndTurnAction;
 
 export interface CombatResult {

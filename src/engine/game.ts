@@ -52,6 +52,8 @@ export const RULES = {
   INCOME_PER_INDUSTRY: 0.15,
   /** Cost in treasury to launch one missile strike. */
   STRIKE_COST: 15,
+  /** Cost in treasury for spies to reveal one foreign territory's forces. */
+  SPY_COST: 10,
   /** Base armies destroyed by a strike (before tech/variance). */
   STRIKE_BASE_DMG: 2,
   /** Bonus damage when striking with global (Orbital) range. */
@@ -140,6 +142,23 @@ export function currentPlayer(state: GameState) {
   return state.players[state.currentPlayerIndex];
 }
 
+/** Territory ids whose forces the current player can see (own + spied). */
+export function revealedTo(state: GameState): Set<string> {
+  const power = currentPlayer(state).power;
+  const set = new Set<string>(state.intel);
+  for (const id of Object.keys(state.territories)) {
+    if (state.territories[id].owner === power) set.add(id);
+  }
+  return set;
+}
+
+export function isRevealed(state: GameState, territoryId: string): boolean {
+  return (
+    state.territories[territoryId]?.owner === currentPlayer(state).power ||
+    state.intel.includes(territoryId)
+  );
+}
+
 /** Territories the current player may act from / move to. */
 export function neighbors(territoryId: string): Record<string, 'land' | 'sea'> {
   return ADJACENCY[territoryId] ?? {};
@@ -174,6 +193,7 @@ export function createGame(config: GameConfig): GameState {
     rng: makeRng(config.seed),
     log: [],
     winner: null,
+    intel: [],
   };
 
   // Seat each active power in its capital with a strong garrison.
@@ -348,6 +368,15 @@ export function validate(state: GameState, action: GameAction): Validation {
     return ok;
   }
 
+  if (action.type === 'spy') {
+    const t = state.territories[action.territoryId];
+    if (!t) return err('Unknown territory.');
+    if (t.owner === player.power) return err('You already see your own forces.');
+    if (state.intel.includes(action.territoryId)) return err('Already revealed this turn.');
+    if (RULES.SPY_COST > player.treasury) return err('Not enough money to spy.');
+    return ok;
+  }
+
   return ok; // endTurn
 }
 
@@ -395,11 +424,31 @@ export function apply(state: GameState, action: GameAction): GameState {
     case 'strike':
       applyStrike(next, action);
       break;
+    case 'spy':
+      applySpy(next, action);
+      break;
     case 'endTurn':
       applyEndTurn(next);
       break;
   }
   return next;
+}
+
+function applySpy(
+  state: GameState,
+  action: Extract<GameAction, { type: 'spy' }>,
+): void {
+  const player = currentPlayer(state);
+  const t = state.territories[action.territoryId];
+  player.treasury -= RULES.SPY_COST;
+  state.intel.push(action.territoryId);
+  const holder = t.owner ? POWER_BY_ID[t.owner].name : 'neutral forces';
+  log(
+    state,
+    player.power,
+    `Spies report ${t.armies} armies${t.navies > 0 ? ` & ${t.navies} navies` : ''} ` +
+      `(${holder}) in ${TERRITORY_BY_ID[action.territoryId].name} (–$${RULES.SPY_COST}).`,
+  );
 }
 
 function applyStrike(
@@ -577,6 +626,9 @@ function applyEndTurn(state: GameState): void {
     if (state.players[idx].alive) break;
   }
   state.currentPlayerIndex = idx;
+
+  // The new player starts blind — spy intel does not carry across turns.
+  state.intel = [];
 
   if (state.turn > state.config.maxTurns) {
     finishByScore(state);
