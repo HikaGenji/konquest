@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import {
   ACTIONS_PER_TURN,
   ageFor,
-  apply,
   buildCostFor,
   canPlayerStrike,
   effectiveStrikeTech,
@@ -26,22 +25,21 @@ import {
   unitCostFor,
   unitsForTerrain,
 } from '../engine';
-import type { GameState, UnitType } from '../engine';
+import type { GameAction, GameState, UnitType } from '../engine';
 import { HexMap } from './HexMap';
 import { MoveModal } from './MoveModal';
 import { TechBar } from './TechBar';
 
 interface Props {
   game: GameState;
-  setGame: (g: GameState) => void;
-  onEndTurn: () => void;
+  onAction: (action: GameAction) => void;
   onQuit: () => void;
 }
 
 type Counts = Record<UnitType, number>;
 const ZERO: Counts = { army: 0, navy: 0, air: 0 };
 
-export function GameScreen({ game, setGame, onEndTurn, onQuit }: Props) {
+export function GameScreen({ game, onAction, onQuit }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pendingMove, setPendingMove] = useState<{ from: string; to: string } | null>(null);
   const [build, setBuild] = useState<Counts>(ZERO);
@@ -69,7 +67,7 @@ export function GameScreen({ game, setGame, onEndTurn, onQuit }: Props) {
 
   function handleTap(id: string) {
     if (strikeMode && selectedId && strikeOptions.has(id)) {
-      setGame(apply(game, { type: 'strike', from: selectedId, to: id }));
+      onAction({ type: 'strike', from: selectedId, to: id });
       setStrikeMode(false);
       return;
     }
@@ -84,20 +82,20 @@ export function GameScreen({ game, setGame, onEndTurn, onQuit }: Props) {
 
   function doBuild() {
     if (!selectedId) return;
-    setGame(apply(game, { type: 'build', tileId: selectedId, ...build }));
+    onAction({ type: 'build', tileId: selectedId, ...build });
     setBuild(ZERO);
   }
   function doMove(army: number, navy: number, air: number) {
     if (!pendingMove) return;
-    setGame(apply(game, { type: 'move', from: pendingMove.from, to: pendingMove.to, army, navy, air }));
+    onAction({ type: 'move', from: pendingMove.from, to: pendingMove.to, army, navy, air });
     setPendingMove(null);
     setSelectedId(null);
   }
   function doResearch(track: 'offense' | 'defense' | 'industry') {
-    setGame(apply(game, { type: 'research', track }));
+    onAction({ type: 'research', track });
   }
   function doSpy(tileId: string) {
-    setGame(apply(game, { type: 'spy', tileId }));
+    onAction({ type: 'spy', tileId });
   }
 
   const sel = selectedId ? game.tiles[selectedId] : null;
@@ -148,7 +146,7 @@ export function GameScreen({ game, setGame, onEndTurn, onQuit }: Props) {
           <span className="hud-chip">🗺️ {sharePct}%</span>
         </div>
         <div className="hud-right">
-          <button className="primary end-btn" onClick={onEndTurn}>End turn ⏭</button>
+          <button className="primary end-btn" onClick={() => onAction({ type: 'endTurn' })}>End turn ⏭</button>
         </div>
       </HexMap>
 

@@ -45,6 +45,7 @@ export interface TileState {
 export interface PlayerState {
   faction: FactionId;
   hero: HeroId;
+  isAI: boolean;
   treasury: number;
   alive: boolean;
   /** Weapons tech (offense), 1..MAX_TECH. */
@@ -63,6 +64,8 @@ export interface GameConfig {
   factions: FactionId[];
   /** Chosen hero per faction, in the same order. */
   heroes: HeroId[];
+  /** Controller per faction: human or AI. */
+  controllers: ('human' | 'ai')[];
   seed: number;
   maxTurns: number;
   /** Hex board radius (board size). */

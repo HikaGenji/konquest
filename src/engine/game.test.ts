@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   AGES,
   ageIndex,
+  aiTakeTurn,
   apply,
   canHold,
   createGame,
@@ -32,10 +33,12 @@ function newGame(
   factions: FactionId[] = ['crimson', 'azure'],
   radius = 3,
   heroes?: HeroId[],
+  controllers?: ('human' | 'ai')[],
 ): GameState {
   return createGame({
     factions,
     heroes: heroes ?? factions.map(() => 'leonidas' as HeroId),
+    controllers: controllers ?? factions.map(() => 'human' as const),
     seed,
     maxTurns: 30,
     radius,
@@ -254,6 +257,28 @@ describe('heroes', () => {
     expect(researchCostFor(g.players[0], 1)).toBeLessThan(researchCost(1));
     expect(unitCostFor(g.players[0], 'army')).toBe(UNIT.army.cost); // Saladin: no unit discount
     expect(unitCostFor(g.players[1], 'army')).toBeLessThan(UNIT.army.cost); // Genghis
+  });
+});
+
+describe('ai', () => {
+  it('plays a full turn and passes play to the next faction', () => {
+    const g = newGame(5, ['crimson', 'azure'], 3, undefined, ['ai', 'human']);
+    expect(currentPlayer(g).faction).toBe('crimson');
+    const s = aiTakeTurn(g);
+    if (s.status === 'playing') {
+      expect(currentPlayer(s).faction).toBe('azure');
+      expect(s.actionsLeft).toBe(3);
+    }
+  });
+
+  it('spends actions (treasury changes or it captures)', () => {
+    const g = newGame(9, ['crimson', 'azure'], 4, undefined, ['ai', 'human']);
+    const before = g.players[0];
+    const tilesBefore = ownedTiles(g, 'crimson').length;
+    const s = aiTakeTurn(g);
+    const after = s.players.find((p) => p.faction === 'crimson')!;
+    const tilesAfter = ownedTiles(s, 'crimson').length;
+    expect(after.treasury !== before.treasury || tilesAfter !== tilesBefore).toBe(true);
   });
 });
 

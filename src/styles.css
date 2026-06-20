@@ -181,6 +181,45 @@ button.ghost {
   color: var(--muted);
 }
 
+.player-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.player-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.player-row .grow {
+  flex: 1;
+}
+.player-row button {
+  padding: 6px 10px;
+  min-height: 38px;
+  font-size: 13px;
+}
+
+.ai-banner {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-weight: 700;
+  font-size: 14px;
+  box-shadow: 0 2px 10px #00000066;
+  white-space: nowrap;
+  z-index: 6;
+}
+
 /* ---------- Game ---------- */
 .game {
   flex: 1;

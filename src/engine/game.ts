@@ -197,6 +197,7 @@ export function createGame(config: GameConfig): GameState {
     players: config.factions.map((faction, i) => ({
       faction,
       hero: config.heroes[i],
+      isAI: config.controllers[i] === 'ai',
       treasury: RULES.STARTING_TREASURY + HERO_BY_ID[config.heroes[i]].mods.startTreasury,
       alive: true,
       offense: 1,

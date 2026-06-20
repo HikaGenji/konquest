@@ -24,14 +24,15 @@ npm run dev        # open the printed localhost URL
 
 ## How to play
 
-1. **Setup** — pick 2–4 factions, a map size and a seed, then each player drafts one of **10 legendary
-   heroes** (Caesar, Attila, Leonidas, Genghis Khan, Napoleon, Alexander, Cleopatra, Sun Tzu, Hannibal,
-   Saladin). Your hero is your profile and gives a unique passive — e.g. +attack, cheaper research,
-   bonus income, free spying, discounted units, or stronger strikes. Each faction starts on one land
-   tile with the same base budget.
+1. **Setup** — pick 2–4 factions and mark each **Human or 🤖 AI**, choose a map size and seed, then each
+   human drafts one of **10 legendary heroes** (Caesar, Attila, Leonidas, Genghis Khan, Napoleon,
+   Alexander, Cleopatra, Sun Tzu, Hannibal, Saladin); AI players get random heroes. Your hero is your
+   profile and gives a unique passive — e.g. +attack, cheaper research, bonus income, free spying,
+   discounted units, or stronger strikes. Each faction starts on one land tile with the same budget.
 2. Each turn you **collect income** equal to the value of the tiles you hold (×Industry bonus), and
-   get **3 actions** to spend — build, move, research, strike or spy each cost one (ending your turn
-   is free). The ⚡ counter in the HUD shows how many remain.
+   get **3 actions** to spend — build, move, research, strike or spy each cost one. The ⚡ counter in
+   the HUD shows how many remain, and the **turn ends automatically** once all three are used (you can
+   also end early). **AI factions** take their turns on their own.
 3. Tap one of **your** tiles to:
    - **Build** units the terrain allows (🪖 on land, ⚓ on sea, ✈️ anywhere); or
    - **Move / attack** — adjacent tiles glow; tap one and choose which units to send. Units may only
@@ -77,6 +78,7 @@ identical output (which is what makes the tests and a future server simple).
 - [x] Tech tree: weapons/defenses/industry, six Ages, age-gated strikes
 - [x] Fog of war, spies, and a between-turns handoff screen
 - [x] 10 historical heroes with unique passive abilities (player profiles)
+- [x] 3 actions per turn (auto-ends) and heuristic AI opponents
 - [ ] Online multiplayer (wire the client to `server/`)
-- [ ] AI opponents for empty seats
+- [ ] Smarter AI (uses fog/heroes/strikes), difficulty levels
 - [ ] Terrain clustering / richer map generation, more unit types
