@@ -167,6 +167,26 @@ describe('movement & combat', () => {
     expect(validate(g, { type: 'move', from: cap, to: nb, army: 0, navy: 0, air: 1 }).ok).toBe(true);
   });
 
+  it('lets navy and air transport armies across sea and mountains', () => {
+    const g = newGame();
+    const cap = ownedTiles(g, 'crimson')[0];
+    const nb = g.adj[cap][0];
+    setType(g, nb, 'sea');
+    g.tiles[cap] = { owner: 'crimson', army: 5, navy: 2, air: 1 };
+    // armies alone cannot cross sea
+    expect(validate(g, { type: 'move', from: cap, to: nb, army: 2, navy: 0, air: 0 }).ok).toBe(false);
+    // one navy (capacity 2) carries 2 armies
+    expect(validate(g, { type: 'move', from: cap, to: nb, army: 2, navy: 1, air: 0 }).ok).toBe(true);
+    // exceeding transport capacity is rejected
+    expect(validate(g, { type: 'move', from: cap, to: nb, army: 3, navy: 1, air: 0 }).ok).toBe(false);
+    // air can also ferry over sea
+    expect(validate(g, { type: 'move', from: cap, to: nb, army: 1, navy: 0, air: 1 }).ok).toBe(true);
+    // over mountains only air carries (navy can't even be there)
+    setType(g, nb, 'mountain');
+    expect(validate(g, { type: 'move', from: cap, to: nb, army: 1, navy: 1, air: 0 }).ok).toBe(false);
+    expect(validate(g, { type: 'move', from: cap, to: nb, army: 1, navy: 0, air: 1 }).ok).toBe(true);
+  });
+
   it('captures a weak neutral with overwhelming force', () => {
     const g = newGame();
     const cap = ownedTiles(g, 'crimson')[0];

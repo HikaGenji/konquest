@@ -50,9 +50,15 @@ export const RULES = {
   VICTORY_VALUE_FRACTION: 0.6,
   /** Actions (build/move/research/strike/spy) allowed per turn. */
   ACTIONS_PER_TURN: 3,
+  /** Armies a single navy can ferry across sea. */
+  NAVY_CAPACITY: 2,
+  /** Armies a single air unit can lift across any terrain. */
+  AIR_CAPACITY: 1,
 } as const;
 
 export const ACTIONS_PER_TURN = RULES.ACTIONS_PER_TURN;
+export const NAVY_CAPACITY = RULES.NAVY_CAPACITY;
+export const AIR_CAPACITY = RULES.AIR_CAPACITY;
 
 export function unitCost(unit: UnitType): number {
   return UNIT[unit].cost;
@@ -344,9 +350,20 @@ export function validate(state: GameState, action: GameAction): Validation {
       return err('Not enough units.');
     }
     if (movingTotal(action) === 0) return err('Nothing to move.');
-    if (action.army > 0 && !canHold(toTile.type, 'army')) return err('Armies cannot enter that terrain.');
     if (action.navy > 0 && !canHold(toTile.type, 'navy')) return err('Navies can only go on sea.');
-    if (action.air > 0 && !canHold(toTile.type, 'air')) return err('Air cannot go there.');
+    // Armies need transport (navy over sea, air over sea/mountain) on non-land tiles.
+    if (action.army > 0 && toTile.type !== 'land') {
+      const capacity =
+        (canHold(toTile.type, 'navy') ? action.navy * RULES.NAVY_CAPACITY : 0) +
+        action.air * RULES.AIR_CAPACITY;
+      if (capacity < action.army) {
+        return err(
+          toTile.type === 'sea'
+            ? 'Armies need navy or air transport to cross sea.'
+            : 'Armies need air transport to cross mountains.',
+        );
+      }
+    }
     return ok;
   }
 

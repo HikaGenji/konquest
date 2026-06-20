@@ -8,7 +8,8 @@ mountains. (Evolved from a *Colonial Conquest* reskin into its own hex-based gam
 - **Map:** a randomly generated hexagon board (Small/Medium/Large) of three terrains —
   🌲 **land**, 🌊 **sea**, ⛰️ **mountain**.
 - **Units & terrain:** 🪖 **armies** hold land · ⚓ **navies** hold sea · ✈️ **air** goes anywhere.
-  To cross water you need navies or air; to take mountains you need air.
+  Navies and air also **transport armies** — each navy ferries 2 armies over sea, each air lifts 1
+  army over sea or mountain — so you can stage amphibious and airborne assaults.
 - **Multiplayer:** hotseat (pass &amp; play) with a handoff screen and fog of war — works on **mobile**
   (touch, pan, pinch-zoom).
 - **Goal:** control **60%** of the map's value, eliminate every rival, or lead when time runs out.
@@ -35,8 +36,9 @@ npm run dev        # open the printed localhost URL
    also end early). **AI factions** take their turns on their own.
 3. Tap one of **your** tiles to:
    - **Build** units the terrain allows (🪖 on land, ⚓ on sea, ✈️ anywhere); or
-   - **Move / attack** — adjacent tiles glow; tap one and choose which units to send. Units may only
-     enter terrain they can hold, so air is your universal expander.
+   - **Move / attack** — adjacent tiles glow; tap one and choose which units to send. To put armies
+     onto sea or mountain tiles, include enough **transport** (⚓ navy carries 2 each over sea, ✈️ air
+     lifts 1 each over sea/mountain); the move dialog shows your live transport capacity.
 4. **Research** three tech tracks — **⚔️ Weapons**, **🛡️ Defenses**, **🏭 Industry** — that climb
    through six **Ages** (Conventional → … → Orbital). Weapons/Defenses tilt combat; Industry compounds
    income. *Strike now, or advance an age and fight from strength.*
