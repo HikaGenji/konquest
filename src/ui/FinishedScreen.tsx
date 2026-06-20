@@ -1,4 +1,4 @@
-import { ownedTerritories, ownedValue, POWER_BY_ID, TOTAL_MAP_VALUE } from '../engine';
+import { ageFor, ownedTerritories, ownedValue, POWER_BY_ID, TOTAL_MAP_VALUE } from '../engine';
 import type { GameState } from '../engine';
 
 interface Props {
@@ -23,12 +23,14 @@ export function FinishedScreen({ game, onRestart }: Props) {
           const power = POWER_BY_ID[p.power];
           const val = ownedValue(game, p.power);
           const pct = Math.round((val / TOTAL_MAP_VALUE) * 100);
+          const age = ageFor(p.offense, p.defense);
           return (
             <div className="row-s" key={p.power}>
               <span className="power-dot" style={{ background: power.color }} />
               <span className="grow">
                 {power.name} {!p.alive && '☠️'}
               </span>
+              <span className="hint" title={`${age.name} Age`}>{age.icon}</span>
               <span className="hint">{ownedTerritories(game, p.power).length} regions</span>
               <b style={{ minWidth: 44, textAlign: 'right' }}>{pct}%</b>
             </div>

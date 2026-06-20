@@ -50,6 +50,10 @@ export interface PlayerState {
   power: PowerId;
   treasury: number;
   alive: boolean;
+  /** Weapons tech (offense), 1..MAX_TECH. */
+  offense: number;
+  /** Defenses tech (defense), 1..MAX_TECH. */
+  defense: number;
 }
 
 export type GameStatus = 'playing' | 'finished';
@@ -96,11 +100,16 @@ export interface MoveAction {
   navies: number;
 }
 
+export interface ResearchAction {
+  type: 'research';
+  track: 'offense' | 'defense';
+}
+
 export interface EndTurnAction {
   type: 'endTurn';
 }
 
-export type GameAction = BuildAction | MoveAction | EndTurnAction;
+export type GameAction = BuildAction | MoveAction | ResearchAction | EndTurnAction;
 
 export interface CombatResult {
   attackerWins: boolean;

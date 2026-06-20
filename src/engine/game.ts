@@ -7,6 +7,7 @@ import {
   TERRITORY_BY_ID,
   TOTAL_MAP_VALUE,
 } from './map';
+import { ageFor, MAX_TECH } from './tech';
 import type {
   CombatResult,
   GameAction,
@@ -24,20 +25,59 @@ export const RULES = {
   NAVY_COST: 30,
   /** Armies a single navy can carry across a sea edge. */
   CARRY_PER_NAVY: 4,
-  /** Per-round hit probability for attacking armies. */
+  /** Base per-round hit probability for attacking armies (tech level 1). */
   ATT_HIT: 0.5,
-  /** Per-round hit probability for a defending great power. */
+  /** Base per-round hit probability for a defending great power (tech 1). */
   DEF_HIT: 0.55,
   /** Independent (neutral) defenders are less effective. */
   NEUTRAL_DEF_HIT: 0.45,
-  /** Per-round hit probability in naval combat. */
-  NAVAL_HIT: 0.5,
+  /** Hit-chance gained per level of your OWN relevant tech. */
+  TECH_HIT_BONUS: 0.06,
+  /** Hit-chance lost to each level of the ENEMY's opposing tech. */
+  TECH_HIT_CROSS: 0.03,
+  HIT_MIN: 0.2,
+  HIT_MAX: 0.85,
+  /** Cost to advance a research track from `level` to `level + 1`. */
+  RESEARCH_BASE: 30,
+  RESEARCH_STEP: 25,
   STARTING_TREASURY: 60,
   CAPITAL_ARMIES: 12,
   CAPITAL_NAVIES: 4,
   /** Win immediately when controlling this fraction of total map value. */
   VICTORY_VALUE_FRACTION: 0.6,
 } as const;
+
+/** Money required to advance an offense/defense track from `level` to next. */
+export function researchCost(level: number): number {
+  return RULES.RESEARCH_BASE + RULES.RESEARCH_STEP * (level - 1);
+}
+
+function clampHit(x: number): number {
+  return Math.min(RULES.HIT_MAX, Math.max(RULES.HIT_MIN, x));
+}
+
+/** Per-round hit chance for an attacker, given both sides' tech levels. */
+export function attackerHit(attOffense: number, defDefense: number): number {
+  return clampHit(
+    RULES.ATT_HIT +
+      RULES.TECH_HIT_BONUS * (attOffense - 1) -
+      RULES.TECH_HIT_CROSS * (defDefense - 1),
+  );
+}
+
+/** Per-round hit chance for a defender, given both sides' tech levels. */
+export function defenderHit(
+  defDefense: number,
+  attOffense: number,
+  isNeutral: boolean,
+): number {
+  const base = isNeutral ? RULES.NEUTRAL_DEF_HIT : RULES.DEF_HIT;
+  return clampHit(
+    base +
+      RULES.TECH_HIT_BONUS * (defDefense - 1) -
+      RULES.TECH_HIT_CROSS * (attOffense - 1),
+  );
+}
 
 // --- Helpers -------------------------------------------------------------
 
@@ -100,6 +140,8 @@ export function createGame(config: GameConfig): GameState {
       power,
       treasury: RULES.STARTING_TREASURY,
       alive: true,
+      offense: 1,
+      defense: 1,
     })),
     territories,
     rng: makeRng(config.seed),
@@ -144,6 +186,8 @@ export function resolveCombat(
   defNavies: number,
   isNeutral: boolean,
   isSea: boolean,
+  attOffense: number,
+  defDefense: number,
 ): CombatResult {
   const rng = state.rng;
   let aA = attArmies;
@@ -152,12 +196,15 @@ export function resolveCombat(
   let dN = defNavies;
   let rounds = 0;
 
+  const attChance = attackerHit(attOffense, defDefense);
+  const defChance = defenderHit(defDefense, attOffense, isNeutral);
+
   // 1. Naval battle for sea invasions where the defender has a fleet.
   if (isSea && dN > 0 && aN > 0) {
     let safety = 0;
     while (aN > 0 && dN > 0 && safety++ < 1000) {
-      const attHits = rollHits(rng, aN, RULES.NAVAL_HIT);
-      const defHits = rollHits(rng, dN, RULES.NAVAL_HIT);
+      const attHits = rollHits(rng, aN, attChance);
+      const defHits = rollHits(rng, dN, defChance);
       aN = Math.max(0, aN - defHits);
       dN = Math.max(0, dN - attHits);
       rounds++;
@@ -176,11 +223,10 @@ export function resolveCombat(
   }
 
   // 2. Land battle for control of the territory.
-  const defHitChance = isNeutral ? RULES.NEUTRAL_DEF_HIT : RULES.DEF_HIT;
   let safety = 0;
   while (aA > 0 && dA > 0 && safety++ < 5000) {
-    const attHits = rollHits(rng, aA, RULES.ATT_HIT);
-    const defHits = rollHits(rng, dA, defHitChance);
+    const attHits = rollHits(rng, aA, attChance);
+    const defHits = rollHits(rng, dA, defChance);
     aA = Math.max(0, aA - defHits);
     dA = Math.max(0, dA - attHits);
     rounds++;
@@ -253,6 +299,13 @@ export function validate(state: GameState, action: GameAction): Validation {
     return ok;
   }
 
+  if (action.type === 'research') {
+    const level = action.track === 'offense' ? player.offense : player.defense;
+    if (level >= MAX_TECH) return err('Already at the highest age for that track.');
+    if (researchCost(level) > player.treasury) return err('Not enough money to research.');
+    return ok;
+  }
+
   return ok; // endTurn
 }
 
@@ -275,11 +328,34 @@ export function apply(state: GameState, action: GameAction): GameState {
     case 'move':
       applyMove(next, action);
       break;
+    case 'research':
+      applyResearch(next, action);
+      break;
     case 'endTurn':
       applyEndTurn(next);
       break;
   }
   return next;
+}
+
+function applyResearch(
+  state: GameState,
+  action: Extract<GameAction, { type: 'research' }>,
+): void {
+  const player = currentPlayer(state);
+  const level = action.track === 'offense' ? player.offense : player.defense;
+  const cost = researchCost(level);
+  player.treasury -= cost;
+  if (action.track === 'offense') player.offense += 1;
+  else player.defense += 1;
+  const age = ageFor(player.offense, player.defense);
+  const what = action.track === 'offense' ? 'weapons' : 'defenses';
+  log(
+    state,
+    player.power,
+    `${POWER_BY_ID[player.power].name} advanced ${what} to level ${level + 1} ` +
+      `(${age.icon} ${age.name} Age, –$${cost}).`,
+  );
 }
 
 function applyBuild(
@@ -325,8 +401,10 @@ function applyMove(
     return;
   }
 
-  // Contested move: combat.
+  // Contested move: combat. Tech levels of both sides shape the odds.
   const isNeutral = to.owner === null;
+  const defender = to.owner ? state.players.find((p) => p.power === to.owner) : undefined;
+  const defDefense = defender ? defender.defense : 1;
   const result = resolveCombat(
     state,
     action.armies,
@@ -335,6 +413,8 @@ function applyMove(
     to.navies,
     isNeutral,
     type === 'sea',
+    player.offense,
+    defDefense,
   );
 
   const defenderName = to.owner ? POWER_BY_ID[to.owner].name : 'the local defenders';

@@ -41,7 +41,12 @@ npm run typecheck  # type-check only
    lost at sea.
 5. Combat is resolved round by round; defenders have a slight edge, and neutral garrisons are
    weaker. Take a region's last defender to capture it.
-6. Press **End turn** to pass the device to the next player.
+6. **Research** (Megalomania-style): instead of spending everything on troops, invest in two tech
+   tracks — **⚔️ Weapons** (offense) and **🛡️ Defenses** — that climb through six visual **Ages**
+   (Conventional → Mechanized → Precision → Drone → Cyber-AI → Orbital). Your tech raises your hit
+   chances and lowers the enemy's, so the constant tension is: *strike now with what you have, or
+   advance an age and fight from a position of strength.* Each level costs more than the last.
+7. Press **End turn** to pass the device to the next player.
 
 ## Architecture
 
@@ -75,6 +80,8 @@ The stack was chosen to grow into full online play without rewrites:
 
 - [x] Deterministic game engine + tests
 - [x] Mobile-friendly hotseat UI with interactive world map
+- [x] Real projected world map (continents from `world-atlas`)
+- [x] Megalomania-style tech progression through six Ages (offense/defense tracks)
 - [ ] **Online multiplayer** — wire the React client to the WebSocket server in `server/`
       (rooms already broadcast authoritative state and enforce turn order)
 - [ ] Lobby: choose powers, ready-up, reconnect

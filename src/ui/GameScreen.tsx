@@ -1,10 +1,13 @@
 import { useMemo, useState } from 'react';
 import {
+  ageFor,
   apply,
+  MAX_TECH,
   neighbors,
   ownedTerritories,
   ownedValue,
   POWER_BY_ID,
+  researchCost,
   RULES,
   TERRITORY_BY_ID,
   TOTAL_MAP_VALUE,
@@ -12,6 +15,7 @@ import {
 import type { GameState } from '../engine';
 import { WorldMap } from './WorldMap';
 import { MoveModal } from './MoveModal';
+import { TechBar } from './TechBar';
 
 interface Props {
   game: GameState;
@@ -68,11 +72,18 @@ export function GameScreen({ game, setGame, onQuit }: Props) {
     resetSelectionBuild();
   }
 
+  function doResearch(track: 'offense' | 'defense') {
+    setGame(apply(game, { type: 'research', track }));
+  }
+
   const sel = selectedId ? game.territories[selectedId] : null;
   const selTerr = selectedId ? TERRITORY_BY_ID[selectedId] : null;
   const sharePct = Math.round((ownedValue(game, player.power) / TOTAL_MAP_VALUE) * 100);
   const buildCost = buildArmies * RULES.ARMY_COST + buildNavies * RULES.NAVY_COST;
   const recent = game.log.slice(-6).reverse();
+  const age = ageFor(player.offense, player.defense);
+  const offCost = researchCost(player.offense);
+  const defCost = researchCost(player.defense);
 
   return (
     <div className="game">
@@ -81,6 +92,9 @@ export function GameScreen({ game, setGame, onQuit }: Props) {
           <span className="power-dot" style={{ background: power.color }} />
           {power.name}
         </div>
+        <span className="age-chip" style={{ borderColor: age.color, color: age.color }}>
+          {age.icon} {age.name}
+        </span>
         <div className="spacer" />
         <div className="stat">
           <span className="k">Treasury</span>
@@ -100,6 +114,27 @@ export function GameScreen({ game, setGame, onQuit }: Props) {
       <WorldMap game={game} selectedId={selectedId} validTargets={validTargets} onTap={handleTap} />
 
       <div className="panel">
+        <div className="research">
+          <TechBar player={player} />
+          <div className="actions">
+            <button
+              disabled={player.offense >= MAX_TECH || offCost > player.treasury}
+              onClick={() => doResearch('offense')}
+            >
+              ⚔️ {player.offense >= MAX_TECH ? 'Weapons maxed' : `Advance weapons → L${player.offense + 1} ($${offCost})`}
+            </button>
+            <button
+              disabled={player.defense >= MAX_TECH || defCost > player.treasury}
+              onClick={() => doResearch('defense')}
+            >
+              🛡️ {player.defense >= MAX_TECH ? 'Defenses maxed' : `Advance defenses → L${player.defense + 1} ($${defCost})`}
+            </button>
+          </div>
+          <p className="hint">
+            Spend now to outclass rivals in battle — or attack while you still hold the edge.
+          </p>
+        </div>
+
         {!sel && (
           <>
             <h3>{power.name}'s turn</h3>
@@ -123,6 +158,10 @@ export function GameScreen({ game, setGame, onQuit }: Props) {
               {selTerr.continent} · value {selTerr.value} · {sel.armies} armies
               {sel.navies > 0 ? `, ${sel.navies} navies` : ''} ·{' '}
               {sel.owner ? POWER_BY_ID[sel.owner].name : 'Neutral'}
+              {(() => {
+                const op = sel.owner ? game.players.find((p) => p.power === sel.owner) : undefined;
+                return op ? ` · ${ageFor(op.offense, op.defense).unit}` : '';
+              })()}
               {selTerr.coastal ? ' · coastal' : ' · landlocked'}
             </p>
 

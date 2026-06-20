@@ -1,13 +1,19 @@
 import { describe, it, expect } from 'vitest';
 import {
   ADJACENCY,
+  AGES,
+  ageIndex,
   apply,
+  attackerHit,
   createGame,
   currentPlayer,
+  defenderHit,
   EDGES,
+  MAX_TECH,
   ownedTerritories,
   ownedValue,
   POWER_BY_ID,
+  researchCost,
   RULES,
   TERRITORIES,
   TERRITORY_BY_ID,
@@ -177,6 +183,64 @@ describe('turn flow & victory', () => {
     const next = apply(g, { type: 'endTurn' });
     expect(next.status).toBe('finished');
     expect(next.winner).toBe('usa');
+  });
+});
+
+describe('technology', () => {
+  it('players start in the first age at tech level 1', () => {
+    const g = newGame();
+    expect(g.players[0].offense).toBe(1);
+    expect(g.players[0].defense).toBe(1);
+    expect(ageIndex(1, 1)).toBe(0);
+  });
+
+  it('researching raises the track and deducts the scaling cost', () => {
+    const g = newGame();
+    const before = g.players[0].treasury;
+    const next = apply(g, { type: 'research', track: 'offense' });
+    expect(next.players[0].offense).toBe(2);
+    expect(next.players[0].treasury).toBe(before - researchCost(1));
+  });
+
+  it('rejects research past the maximum age', () => {
+    let g = newGame();
+    g.players[0].offense = MAX_TECH;
+    g.players[0].treasury = 99999;
+    const v = validate(g, { type: 'research', track: 'offense' });
+    expect(v.ok).toBe(false);
+  });
+
+  it('rejects research the treasury cannot afford', () => {
+    const g = newGame();
+    g.players[0].treasury = 0;
+    const v = validate(g, { type: 'research', track: 'offense' });
+    expect(v.ok).toBe(false);
+  });
+
+  it('advancing both tracks climbs through the ages', () => {
+    const top = ageIndex(MAX_TECH, MAX_TECH);
+    expect(top).toBe(AGES.length - 1);
+    expect(ageIndex(1, 1)).toBeLessThan(top);
+  });
+
+  it('higher offense and defense improve hit chances monotonically', () => {
+    expect(attackerHit(3, 1)).toBeGreaterThan(attackerHit(1, 1));
+    expect(attackerHit(1, 4)).toBeLessThan(attackerHit(1, 1)); // enemy armor hurts
+    expect(defenderHit(4, 1, false)).toBeGreaterThan(defenderHit(1, 1, false));
+  });
+
+  it('an advanced attacker beats an equal-sized low-tech defender most of the time', () => {
+    let attackerWins = 0;
+    const trials = 40;
+    for (let seed = 0; seed < trials; seed++) {
+      let g = createGame({ powers: ['usa', 'china'], seed, maxTurns: 30 });
+      g.players[0].offense = MAX_TECH; // USA fields Orbital Command
+      g.territories['usa_terr'] = { owner: 'usa', armies: 20, navies: 0 };
+      g.territories['mexico'] = { owner: null, armies: 20, navies: 0 };
+      const r = apply(g, { type: 'move', from: 'usa_terr', to: 'mexico', armies: 20, navies: 0 });
+      if (r.territories['mexico'].owner === 'usa') attackerWins++;
+    }
+    expect(attackerWins).toBeGreaterThan(trials * 0.7);
   });
 });
 
