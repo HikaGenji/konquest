@@ -1,14 +1,17 @@
 import { useRef, useState } from 'react';
 import {
   EDGES,
+  MAP_H,
+  MAP_W,
   POWER_BY_ID,
   TERRITORIES,
   TERRITORY_BY_ID,
 } from '../engine';
 import type { GameState } from '../engine';
+import { GRATICULE_PATH, LAND_PATH } from './worldGeo';
 
-const VW0 = 1000;
-const VH0 = 520;
+const VW0 = MAP_W;
+const VH0 = MAP_H;
 const TAP_THRESHOLD = 6; // px of movement still counts as a tap
 
 interface Props {
@@ -29,7 +32,7 @@ function fillFor(game: GameState, id: string): string {
 
 export function WorldMap({ game, selectedId, validTargets, onTap }: Props) {
   const svgRef = useRef<SVGSVGElement | null>(null);
-  const [view, setView] = useState({ cx: 500, cy: 250, z: 1 });
+  const [view, setView] = useState({ cx: MAP_W / 2, cy: MAP_H / 2, z: 1 });
 
   // Pointer bookkeeping for pan / pinch / tap discrimination.
   const pointers = useRef<Map<number, { x: number; y: number }>>(new Map());
@@ -116,6 +119,28 @@ export function WorldMap({ game, selectedId, validTargets, onTap }: Props) {
         onPointerCancel={onPointerUp}
         onWheel={onWheel}
       >
+        <defs>
+          <radialGradient id="ocean" cx="50%" cy="38%" r="75%">
+            <stop offset="0%" stopColor="#143052" />
+            <stop offset="100%" stopColor="#0a1626" />
+          </radialGradient>
+        </defs>
+
+        {/* Ocean */}
+        <rect x={-200} y={-200} width={MAP_W + 400} height={MAP_H + 400} fill="url(#ocean)" />
+
+        {/* Graticule */}
+        <path d={GRATICULE_PATH} fill="none" stroke="#ffffff" strokeWidth={0.4} opacity={0.06} />
+
+        {/* Continents */}
+        <path
+          d={LAND_PATH}
+          fill="#2c3e57"
+          stroke="#42597a"
+          strokeWidth={0.6}
+          strokeLinejoin="round"
+        />
+
         {/* Connections */}
         <g>
           {EDGES.map((e, i) => {
